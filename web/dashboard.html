@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tally 控制台</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="nav" aria-label="主导航">
+    <div class="brand"><b>Tally</b><span>控制台 · AI-2920</span></div>
+    <a href="#overview" data-view="overview">总览</a>
+    <a href="#clients" data-view="clients">客户 <em>阶段 1</em></a>
+    <a href="#spend" data-view="spend">Spend 与 Rate <em>阶段 2</em></a>
+    <a href="#reports" data-view="reports">Report 统计 <em>阶段 3</em></a>
+    <a href="#usage" data-view="usage">使用记录 <em>阶段 4</em></a>
+    <div class="nav-group">工具</div>
+    <a href="#tokens" data-view="tokens">我的 MCP 令牌</a>
+    <a href="#tools" data-view="tools">工具调试台</a>
+    <div class="nav-foot" id="navFoot">—</div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div><h1 id="viewTitle">总览</h1><p class="sub" id="viewSub"></p></div>
+      <div class="user"><span class="avatar" id="avatar" aria-hidden="true">?</span><span id="meEmail">—</span><button type="button" id="logout">退出</button></div>
+    </header>
+
+    <!-- ============ 总览 ============ -->
+    <section class="view" id="view-overview" data-title="总览" data-sub="服务状态、阶段进度和工具清单">
+      <div class="grid-4">
+        <div class="tile"><span class="k">服务</span><span class="v" id="tService">加载中…</span><span class="d" id="tServiceD"></span></div>
+        <div class="tile"><span class="k">上游 FeedMob API</span><span class="v" id="tApi">—</span><span class="d" id="tApiD"></span>
+          <button type="button" id="btnCheck" style="justify-self:start;margin-top:4px">测试连接</button></div>
+        <div class="tile"><span class="k">MCP 工具</span><span class="v" id="tTools">—</span><span class="d" id="tToolsD"></span></div>
+        <div class="tile"><span class="k">今日调用</span><span class="v" id="tCalls">—</span><span class="d" id="tCallsD"></span></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>阶段进度</h2><span class="muted" style="font-size:12.5px">每阶段单独验收</span></div>
+        <div class="stages" id="stages"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>全部工具</h2><span class="muted" style="font-size:12.5px">Claude 和这个控制台用的是同一套工具</span></div>
+        <div class="tbl-wrap"><table><thead><tr><th>工具</th><th>用途</th><th>阶段</th><th>类型</th><th>状态</th></tr></thead><tbody id="toolRows"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ============ 客户 ============ -->
+    <section class="view" id="view-clients" data-title="客户" data-sub="get_clients · 只读" hidden>
+      <div class="panel">
+        <form class="toolbar" id="clientForm">
+          <label for="clientQ">客户名称<input id="clientQ" type="search" placeholder="例如 Uber，留空查全部"></label>
+          <button class="primary" type="submit" id="clientGo">查询</button>
+          <button type="button" id="clientCsv" disabled>导出 CSV</button>
+          <label style="flex-direction:row;display:flex;align-items:center;gap:6px"><input type="checkbox" id="hideTest" checked> 隐藏测试客户</label>
+          <span class="muted" id="clientMeta" style="font-size:12.5px;margin-left:auto"></span>
+        </form>
+        <div class="tbl-wrap scroll-y"><table><thead><tr><th class="num" style="width:70px">ID</th><th>客户名称</th><th>状态</th><th>MMP</th><th>测试客户</th><th>创建日期</th><th></th></tr></thead>
+          <tbody id="clientRows"><tr><td colspan="7" class="empty">输入名称后点“查询”，留空则列出全部客户</td></tr></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ============ Spend 与 Rate ============ -->
+    <section class="view" id="view-spend" data-title="Spend 与 Rate" data-sub="查询每日 spend 和单价；新增、修改 spend；修改历史单价" hidden>
+      <div class="panel">
+        <h2>查询</h2>
+        <form class="form-grid" id="spendForm">
+          <label for="spClick">Click URL ID（逗号分隔）<input id="spClick" placeholder="19859, 23215"></label>
+          <label for="spClient">或 Client ID<input id="spClient" placeholder="171" inputmode="numeric"></label>
+          <label for="spStart">开始日期<input id="spStart" type="date"></label>
+          <label for="spEnd">结束日期<input id="spEnd" type="date"></label>
+          <button class="primary" type="submit" id="spGo">查询</button>
+        </form>
+        <p class="muted" id="spMeta" style="font-size:12.5px">填 Click URL 或 Client ID 其中一个。单价历史只在填了 Click URL、或查出 spend 后自动加载。</p>
+      </div>
+      <div class="grid-4" id="spTiles" hidden>
+        <div class="tile"><span class="k">Net spend 合计</span><span class="v" id="spNet">—</span></div>
+        <div class="tile"><span class="k">Gross spend 合计</span><span class="v" id="spGross">—</span></div>
+        <div class="tile"><span class="k">Margin</span><span class="v" id="spMargin">—</span><span class="d">1 − net ÷ gross</span></div>
+        <div class="tile"><span class="k">Click URL / 天数</span><span class="v" id="spCount">—</span></div>
+      </div>
+      <div class="plan" id="spResult" hidden>
+        <div class="panel"><h2>按 Click URL 汇总</h2>
+          <div class="tbl-wrap"><table><thead><tr><th>Click URL</th><th>Campaign</th><th class="num">天数</th><th class="num">Net</th><th class="num">Gross</th><th class="num">Margin</th></tr></thead><tbody id="spByUrl"></tbody></table></div></div>
+        <div class="panel"><h2>单价区间</h2>
+          <div class="tbl-wrap"><table><thead><tr><th>Click URL</th><th>从</th><th>到</th><th class="num">Net CPI</th><th class="num">Gross CPI</th><th class="num">Margin %</th></tr></thead><tbody id="spPeriods"></tbody></table></div></div>
+      </div>
+      <div class="panel" id="spDailyPanel" hidden>
+        <div class="panel-head"><h2>每日明细</h2><span class="muted" style="font-size:12.5px">spend 和当天单价并排显示</span></div>
+        <div class="tbl-wrap scroll-y"><table><thead><tr><th>日期</th><th>Click URL</th><th class="num">Net spend</th><th class="num">Gross spend</th><th class="num">Net CPI</th><th class="num">Gross CPI</th><th class="num">Margin %</th></tr></thead><tbody id="spDaily"></tbody></table></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>写入</h2><span id="writeState"></span></div>
+        <p class="notice" id="writeOff" hidden>写入功能在服务器上没有开启（需要 <code>ENABLE_WRITE=true</code>），下面的表单只能填写和预览，不能提交。</p>
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" aria-selected="true" data-tab="w-create">新增 Spend</button>
+          <button type="button" role="tab" aria-selected="false" data-tab="w-update">修改 Spend</button>
+          <button type="button" role="tab" aria-selected="false" data-tab="w-prices">修改历史单价</button>
+        </div>
+        <form class="form-grid" id="w-create" data-tool="create_direct_spend">
+          <label>Click URL ID *<input name="click_url_id" required inputmode="numeric"></label>
+          <label>日期 *<input name="spend_date" type="date" required></label>
+          <button type="button" id="spFind" title="根据 MMP 事件数、单价、内部 report 和后台任务说明自动算出 net / gross">自动查找金额</button>
+          <div class="wide" id="spFindResult"></div>
+          <label>Net spend *<input name="net_spend" required inputmode="decimal"></label>
+          <label>Gross spend *<input name="gross_spend" required inputmode="decimal"></label>
+          <label>Impressions<input name="impression" inputmode="numeric"></label>
+          <label>Clicks<input name="clicks_count" inputmode="numeric"></label>
+          <label>Installs<input name="installs_count" inputmode="numeric"></label>
+          <label>Creative<input name="creative"></label>
+          <label class="wide">修改原因（会自动加上你的邮箱）<input name="audit_comment" placeholder="例如：补录 11/5 的 spend"></label>
+          <button class="primary" type="submit">预览</button>
+        </form>
+        <form class="form-grid" id="w-update" data-tool="update_direct_spend" hidden>
+          <label>NetSpend ID<input name="id" inputmode="numeric" placeholder="或用下面两项定位"></label>
+          <label>Click URL ID<input name="click_url_id" inputmode="numeric"></label>
+          <label>日期<input name="spend_date" type="date"></label>
+          <label>新 Net spend<input name="net_spend" inputmode="decimal"></label>
+          <label>新 Gross spend<input name="gross_spend" inputmode="decimal"></label>
+          <label>新 Installs<input name="installs_count" inputmode="numeric"></label>
+          <label>新 Clicks<input name="clicks_count" inputmode="numeric"></label>
+          <label class="wide">修改原因<input name="audit_comment"></label>
+          <button class="primary" type="submit">预览</button>
+        </form>
+        <form class="plan" id="w-prices" data-tool="update_click_url_prices" hidden>
+          <div class="form-grid">
+            <label>Click URL ID *<input name="click_url_id" required inputmode="numeric" placeholder="例如 19859"></label>
+            <label>开始日期<input id="pcStart" type="date"></label>
+            <label>结束日期<input id="pcEnd" type="date"></label>
+            <button type="button" id="pcLoad">载入现有单价</button>
+          </div>
+          <div class="form-grid">
+            <label>Net CPI<input id="pcFillNet" inputmode="decimal" placeholder="1.1 或 N/A"></label>
+            <label>Gross CPI<input id="pcFillGross" inputmode="decimal" placeholder="3 或 N/A"></label>
+            <label>Margin %<input id="pcFillMargin" inputmode="decimal" placeholder="63 或 N/A"></label>
+            <button type="button" id="pcFill">按上面的日期范围填充</button>
+          </div>
+          <div class="tbl-wrap price-table"><table>
+            <thead><tr><th>日期 *</th><th>Net CPI *</th><th>Gross CPI *</th><th>Margin % *</th><th></th></tr></thead>
+            <tbody id="pcRows"></tbody></table>
+            <p class="empty" id="pcEmpty">还没有行。点“载入现有单价”改已有的，或用上面的“填充”，也可以手动“添加一行”。</p></div>
+          <div class="row-actions"><button type="button" id="pcAdd">+ 添加一行</button><button type="button" id="pcClear">清空</button><button class="primary" type="submit">预览</button></div>
+          <p class="muted" style="font-size:12.5px">只能改今天之前的日期。CPI 是 ≥ 0 的数字，Margin 可以为负；<b>N/A</b> 表示动态（CPI 在系统里存成 -1，margin 存成空）。每行三个值都要填。</p>
+        </form>
+        <div id="writeConfirm"></div>
+      </div>
+    </section>
+
+    <!-- ============ Report ============ -->
+    <section class="view" id="view-reports" data-title="Report 统计" data-sub="客户报表、渠道和 Campaign" hidden>
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" aria-selected="true" data-tab="r-overview">报表总览</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="r-internal">客户报表（上传给客户）</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="r-vendors">渠道</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="r-campaigns">Campaign</button>
+      </div>
+      <div id="r-overview" class="plan">
+        <p class="notice info">每份客户报表（后台“Choose Client Report”上传给客户的报表）在所选日期内哪几天有数据、哪几天缺失、最近什么时候上传。点“对账”可以和 FeedMob 的 direct spend 逐天比较。</p>
+        <div class="panel">
+          <form class="form-grid" id="ovForm">
+            <label for="ovStart">开始日期<input id="ovStart" type="date"></label>
+            <label for="ovEnd">结束日期<input id="ovEnd" type="date"></label>
+            <button class="primary" type="submit" id="ovGo">统计全部报表</button>
+          </form>
+          <p class="muted" id="ovMeta" style="font-size:12.5px">默认看最近 14 天（到昨天为止）。18 份报表逐个查询，约需 10 秒。</p>
+        </div>
+        <div class="grid-4" id="ovTiles" hidden>
+          <div class="tile"><span class="k">报表数</span><span class="v" id="ovCount">—</span></div>
+          <div class="tile"><span class="k">数据完整</span><span class="v" id="ovOk">—</span></div>
+          <div class="tile"><span class="k">有缺天</span><span class="v" id="ovGaps">—</span></div>
+          <div class="tile"><span class="k">没有数据</span><span class="v" id="ovEmpty">—</span></div>
+        </div>
+        <div class="panel" id="ovPanel" hidden>
+          <div class="tbl-wrap scroll-y"><table><thead><tr><th>报表（后台名称）</th><th>状态</th><th class="num">有数据</th><th>最新数据日</th><th>最近上传</th><th>缺失日期</th><th>渠道</th><th class="num">Gross</th><th></th></tr></thead>
+            <tbody id="ovRows"></tbody></table></div>
+        </div>
+      </div>
+      <div id="r-internal" class="plan" hidden>
+        <p class="notice info">数据来源是后台“Choose Client Report”页面<b>上传给客户的报表</b>（client_report_spends），<b>不是 FeedMob 的 direct spend</b>，和 Femini 的 Daily Campaign Spends 不是同一份数据。要看 FeedMob 自己的 spend，请用“Spend 与 Rate”页。</p>
+        <div class="panel">
+          <form class="form-grid" id="rpForm">
+            <label for="rpName">客户报表（后台名称 · 接口名）<select id="rpName"><option>加载中…</option></select></label>
+            <label for="rpStart">开始日期<input id="rpStart" type="date"></label>
+            <label for="rpEnd">结束日期<input id="rpEnd" type="date"></label>
+            <button class="primary" type="submit" id="rpGo">统计</button>
+            <button type="button" id="rpCompare" title="按 click URL、按天比较报表 gross 和 FeedMob direct spend">和 direct spend 对账</button>
+          </form>
+        </div>
+        <p class="muted" id="rpMeta" style="font-size:13px" hidden></p>
+        <div class="grid-4" id="rpTiles" hidden>
+          <div class="tile"><span class="k">Gross 合计</span><span class="v" id="rpTotal">—</span></div>
+          <div class="tile"><span class="k">行数</span><span class="v" id="rpRows">—</span></div>
+          <div class="tile"><span class="k">渠道数</span><span class="v" id="rpVendors">—</span></div>
+          <div class="tile"><span class="k">客户</span><span class="v" id="rpClients" style="font-size:15px">—</span></div>
+        </div>
+        <div class="grid-2" id="rpResult" hidden>
+          <div class="panel"><h2>按天</h2><div class="bars" id="rpByDay"></div></div>
+          <div class="panel"><h2>按渠道</h2><div class="bars" id="rpByVendor"></div></div>
+        </div>
+        <div class="panel" id="cmpPanel" hidden>
+          <div class="panel-head"><h2>和 direct spend 对账</h2><span class="muted" id="cmpMeta" style="font-size:12.5px"></span></div>
+          <div class="chips" id="cmpCounts"></div>
+          <div class="tbl-wrap"><table><thead><tr><th>Click URL</th><th>渠道</th><th>Campaign</th><th class="num">报表 gross</th><th class="num">direct gross</th><th class="num">差额</th><th class="num">金额不同</th><th>报表缺失的日期</th></tr></thead><tbody id="cmpByUrl"></tbody></table></div>
+          <label style="flex-direction:row;display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="cmpAll"> 明细里也显示金额一致的天</label>
+          <div class="tbl-wrap scroll-y"><table><thead><tr><th>日期</th><th>Click URL</th><th>渠道</th><th class="num">报表 gross</th><th class="num">direct gross</th><th class="num">差额（报表 − direct）</th><th>结果</th></tr></thead><tbody id="cmpRows"></tbody></table></div>
+        </div>
+        <div class="panel" id="rpCampPanel" hidden><h2>按 Campaign</h2>
+          <div class="tbl-wrap scroll-y"><table><thead><tr><th>Campaign</th><th class="num">行数</th><th class="num">Gross</th></tr></thead><tbody id="rpByCampaign"></tbody></table></div></div>
+      </div>
+      <div id="r-vendors" class="plan" hidden>
+        <div class="panel">
+          <div class="toolbar"><label for="vdQ">筛选名称<input id="vdQ" type="search" placeholder="例如 Liftoff"></label><span class="muted" id="vdMeta" style="font-size:12.5px;margin-left:auto"></span></div>
+          <div class="chips" id="vdStatus"></div>
+          <div class="chips" id="vdType"></div>
+          <div class="tbl-wrap scroll-y"><table><thead><tr><th class="num">ID</th><th>渠道</th><th>状态</th><th>类型</th><th>创建日期</th></tr></thead><tbody id="vdRows"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody></table></div>
+        </div>
+      </div>
+      <div id="r-campaigns" class="plan" hidden>
+        <div class="panel">
+          <form class="toolbar" id="cpForm"><label for="cpClient">Client ID<input id="cpClient" inputmode="numeric" placeholder="例如 171"></label>
+            <label style="flex-direction:row;display:flex;align-items:center;gap:6px"><input type="checkbox" id="cpArchived"> 包含已归档</label>
+            <button class="primary" type="submit">查询</button><span class="muted" id="cpMeta" style="font-size:12.5px;margin-left:auto"></span></form>
+          <div class="chips" id="cpOs"></div>
+          <div class="tbl-wrap scroll-y"><table><thead><tr><th class="num">ID</th><th>Campaign</th><th>OS</th><th>状态</th><th>Agency</th><th>创建日期</th></tr></thead><tbody id="cpRows"><tr><td colspan="6" class="empty">输入 Client ID 后查询（可在“客户”页查 ID）</td></tr></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 使用记录 ============ -->
+    <section class="view" id="view-usage" data-title="使用记录" data-sub="谁在用、调了哪些工具、多少次、成功率" hidden>
+      <div class="toolbar"><label for="usDays">时间范围<select id="usDays"><option value="1">今天（24 小时）</option><option value="7" selected>最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select></label>
+        <button type="button" id="usRefresh">刷新</button></div>
+      <div class="grid-4">
+        <div class="tile"><span class="k">调用次数</span><span class="v" id="usTotal">—</span></div>
+        <div class="tile"><span class="k">使用人数</span><span class="v" id="usUsers">—</span></div>
+        <div class="tile"><span class="k">失败率</span><span class="v" id="usFail">—</span><span class="d" id="usFailD"></span></div>
+        <div class="tile"><span class="k">平均耗时</span><span class="v" id="usAvg">—</span></div>
+      </div>
+      <div class="grid-2">
+        <div class="panel"><h2>按工具</h2><div class="bars" id="usByTool"></div></div>
+        <div class="panel"><h2>按人</h2><div class="bars" id="usByCaller"></div></div>
+      </div>
+      <div class="grid-2">
+        <div class="panel"><h2>按天</h2><div class="bars" id="usByDay"></div></div>
+        <div class="panel"><h2>按来源</h2><div class="bars" id="usBySource"></div>
+          <p class="muted" style="font-size:12.5px">dashboard = 这个控制台；mcp-http = Claude 通过网址连接；stdio = 本地运行。shared-token 是旧记录：共享令牌已不能连 MCP，现在每次调用都记在具体的人名下。</p></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>调用明细</h2>
+          <div class="toolbar"><label for="usCaller">人<select id="usCaller"><option value="">全部</option></select></label><label for="usTool">工具<select id="usTool"><option value="">全部</option></select></label></div></div>
+        <div class="tbl-wrap scroll-y"><table><thead><tr><th>时间</th><th>调用人</th><th>来源</th><th>工具</th><th>参数</th><th class="num">耗时</th><th>结果</th></tr></thead><tbody id="usRows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ============ 令牌 ============ -->
+    <section class="view" id="view-tokens" data-title="我的 MCP 令牌" data-sub="个人令牌让 Claude 的调用记在你名下" hidden>
+      <div class="plan">
+        <div class="panel">
+          <h2>生成新令牌</h2>
+          <p class="muted" style="font-size:13px">每台电脑或每个工具用一个令牌，方便以后单独吊销。令牌只显示一次。</p>
+          <form class="toolbar" id="tkForm"><label for="tkLabel">用途<input id="tkLabel" placeholder="例如：MacBook 上的 Claude Code" maxlength="60"></label><button class="primary" type="submit">生成</button></form>
+          <div id="tkNew"></div>
+        </div>
+        <div class="panel" id="connectPanel">
+          <h2>连接到任何 Agent</h2>
+          <p class="muted" style="font-size:13px">这是标准的 MCP 服务（Streamable HTTP + <code>Authorization: Bearer</code> 令牌）。支持自定义请求头的 Agent 都能连，选你用的那个：</p>
+          <div class="tabs" id="connTabs" role="tablist" aria-label="Agent 类型"></div>
+          <p class="notice info" id="connNote" style="font-size:13px"></p>
+          <pre class="code" id="mcpCmd"></pre>
+          <div class="row-actions"><button type="button" id="copyCmd">复制</button><span class="muted" id="connTokenState" style="font-size:12.5px;align-self:center"></span></div>
+          <details style="font-size:13px"><summary style="cursor:pointer">连不上？</summary>
+            <ul class="muted" style="margin:6px 0 0;padding-left:18px">
+              <li>接口地址是 <code id="connUrl"></code>，只接受 POST，没有 SSE 长连接；认证只认 <code>Authorization: Bearer 令牌</code>。</li>
+              <li>返回 401：令牌写错、已吊销，或客户端没有带上请求头。</li>
+              <li>只能走 OAuth 登录的“连接器”类入口（如 claude.ai 网页版、ChatGPT 的连接器）目前不支持，因为这里没有 OAuth。请用上面的配置文件或命令行方式。</li>
+              <li>地址是临时隧道，服务器重启后会变，要重新配置。</li>
+            </ul></details>
+        </div>
+      </div>
+      <div class="panel"><h2>我的令牌</h2>
+        <div class="tbl-wrap"><table><thead><tr><th>用途</th><th>开头</th><th>创建时间</th><th>最近使用</th><th>状态</th><th></th></tr></thead><tbody id="tkRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody></table></div></div>
+    </section>
+
+    <!-- ============ 工具调试台 ============ -->
+    <section class="view" id="view-tools" data-title="工具调试台" data-sub="直接调用任意 MCP 工具，看原始返回" hidden>
+      <div class="grid-2">
+        <div class="panel">
+          <label for="toolSel">选择工具<select id="toolSel"></select></label>
+          <p class="muted" id="toolDesc" style="font-size:13px"></p>
+          <form id="toolForm" class="plan"></form>
+          <button class="primary" type="button" id="toolRun" style="justify-self:start">调用</button>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>返回结果</h2><span class="result-meta" id="toolMeta"></span></div>
+          <p id="toolSummary" style="font-size:13.5px"></p>
+          <pre class="code" id="toolOut">还没有调用。</pre>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="/assets/app.js"></script>
+</body>
+</html>

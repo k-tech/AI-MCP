@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 · Tally 控制台</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<div class="login-wrap">
+  <form class="login" id="form" novalidate>
+    <div class="brand"><b>Tally 控制台</b><span>FeedMob 内部工具 · 仅限 @feedmob.com</span></div>
+    <label for="email">公司邮箱<input id="email" type="email" autocomplete="email" placeholder="you@feedmob.com" required></label>
+    <label for="token">访问令牌<input id="token" type="password" autocomplete="current-password" placeholder="向项目负责人索取" required></label>
+    <p class="err" id="err" role="alert"></p>
+    <button class="primary" type="submit" id="submit">登录</button>
+    <p class="muted" style="font-size:12.5px">登录后 12 小时内有效。这个访问令牌只用来登录控制台；Claude 等 Agent 连接 MCP 请用登录后在“我的 MCP 令牌”里生成的个人令牌。</p>
+  </form>
+</div>
+<script src="/assets/login.js"></script>
+</body>
+</html>

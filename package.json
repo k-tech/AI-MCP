@@ -1,0 +1,24 @@
+{
+  "name": "tally",
+  "version": "0.1.0",
+  "description": "Tally: FeedMob spend, rate and report MCP server with a human console",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "tally": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "start": "node dist/src/index.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.7.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.5.2"
+  }
+}
