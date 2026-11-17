@@ -154,6 +154,7 @@
       <div class="tabs" role="tablist">
         <button type="button" role="tab" aria-selected="true" data-tab="r-overview">报表总览</button>
         <button type="button" role="tab" aria-selected="false" data-tab="r-internal">客户报表（上传给客户）</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="r-partner">渠道报表对账</button>
         <button type="button" role="tab" aria-selected="false" data-tab="r-vendors">渠道</button>
         <button type="button" role="tab" aria-selected="false" data-tab="r-campaigns">Campaign</button>
       </div>
@@ -209,6 +210,20 @@
         </div>
         <div class="panel" id="rpCampPanel" hidden><h2>按 Campaign</h2>
           <div class="tbl-wrap scroll-y"><table><thead><tr><th>Campaign</th><th class="num">行数</th><th class="num">Gross</th></tr></thead><tbody id="rpByCampaign"></tbody></table></div></div>
+      </div>
+      <div id="r-partner" class="plan" hidden>
+        <p class="notice info">每次查询一个渠道，金额与 direct net 比较。报表内已映射的 Click URL 自动纳入对账；可补充 Click URL 以发现报表中完全缺失的数据。缺天只表示没有返回记录，不代表异常。异步报表先用原始工具申请并检查完成状态。</p>
+        <form class="panel form-grid" id="vrForm">
+          <label>渠道<select id="vrPartner"><option>samsung</option><option>youappi</option><option>kayzen</option><option>beeswax</option><option>jampp</option><option>remerge</option><option>pubmatic</option><option>inmobi</option><option>smadex</option><option>liftoff</option></select></label>
+          <label>开始日期<input id="vrStart" type="date" required></label><label>结束日期<input id="vrEnd" type="date" required></label>
+          <label>Client ID（Jampp 必填；Remerge 216/189；Pubmatic 189）<input id="vrClient" type="number" min="1"></label>
+          <label class="wide">已完成报表 ID（JSON，例如 {"report_id":"..."}）<input id="vrIds" placeholder="仅异步渠道需要"></label>
+          <label class="wide">额外 Click URL IDs（可选，逗号分隔；用于查找报表缺失）<input id="vrScope"></label>
+          <label>金额容差<input id="vrTolerance" type="number" min="0" step="any" value="0.01"></label>
+          <div class="row-actions"><button class="primary" type="submit">统计</button><button id="vrCompare" type="button">对账</button></div>
+        </form>
+        <p id="vrSummary" role="status"></p>
+        <div class="panel" id="vrResult" hidden><h2>结果</h2><pre class="code" id="vrOutput"></pre></div>
       </div>
       <div id="r-vendors" class="plan" hidden>
         <div class="panel">

@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { defineTool, type ToolContext } from "./registry.js";
 import { ApiError, rowsOf } from "../http.js";
+import { completeRows, validateRows, currencyInfo, completenessWarning } from "./report-safety.js";
 import { amount, count, date, rate, margin, assertRange, round2 } from "./schemas.js";
 
 export interface SpendRow { click_url_id: number; campaign_name: string; date: string; feedmob_net_spend: number; feedmob_gross_spend: number }
@@ -29,7 +30,9 @@ export const getDirectSpends = defineTool({
   async run({ start_date, end_date, click_url_ids, client_id }, { api }) {
     assertRange(start_date, end_date);
     if (!click_url_ids?.length && client_id === undefined) throw new Error("请至少提供 click_url_ids 或 client_id");
-    const rows = rowsOf<SpendRow>(await api.get("/ai/api/direct_spends", { start_date, end_date, "click_url_ids[]": click_url_ids, client_id }));
+    const rows = completeRows<SpendRow>(await api.get("/ai/api/direct_spends", { start_date, end_date, "click_url_ids[]": click_url_ids, client_id }), "direct spend");
+    validateRows(rows, "direct spend", "date", ["feedmob_net_spend", "feedmob_gross_spend"]);
+    const currency_info = currencyInfo(rows);
     const byClickUrl = new Map<number, { click_url_id: number; campaign_name: string; days: number; net: number; gross: number }>();
     for (const r of rows) {
       const g = byClickUrl.get(r.click_url_id) ?? { click_url_id: r.click_url_id, campaign_name: r.campaign_name, days: 0, net: 0, gross: 0 };
@@ -38,7 +41,7 @@ export const getDirectSpends = defineTool({
     const totals = [...byClickUrl.values()].map((g) => ({ ...g, net: round2(g.net), gross: round2(g.gross), margin_pct: g.gross ? round2((1 - g.net / g.gross) * 100) : null }))
       .sort((a, b) => b.gross - a.gross);
     const net = round2(totals.reduce((s, t) => s + t.net, 0)), gross = round2(totals.reduce((s, t) => s + t.gross, 0));
-    return { summary: `${rows.length} 行，${totals.length} 个 click URL，合计 net ${net} / gross ${gross}`, data: { totals: { net, gross, rows: rows.length }, by_click_url: totals, rows } };
+    return { summary: `${rows.length} 行，${totals.length} 个 click URL，合计 net ${net} / gross ${gross}`, data: { currency_info, completeness_warning: completenessWarning, totals: { net, gross, rows: rows.length }, by_click_url: totals, rows } };
   },
 });
 

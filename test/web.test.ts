@@ -12,7 +12,9 @@ const cfg = loadConfig({ FEEDMOB_API_BASE: "http://localhost:4010", FEEDMOB_KEY:
 const api = fakeApi({ "GET /ai/api/clients": (u) => {
   const q = u.searchParams.get("client_name")?.toLowerCase() ?? "";
   return [200, [{ id: 1, name: "Uber Technologies" }, { id: 2, name: "Lyft" }].filter((c) => c.name.toLowerCase().includes(q))];
-} });
+}, "GET /ai/api/samsung_reports": () => [200, [{ date: "2026-11-01", partner_net_spend: 5, click_url_id: 1, samsung_content_id: "A" }]],
+  "GET /ai/api/direct_spends": () => [200, [{ click_url_id: 1, date: "2026-11-01", feedmob_net_spend: 5 }]]
+});
 const usage = new UsageStore();
 let server: Server, base = "";
 before(async () => {
@@ -51,9 +53,11 @@ test("web: status, tool list and tool calls for a logged-in user", async () => {
   const page = await fetch(base + "/dashboard/", { headers: { cookie } });
   assert.equal(page.status, 200); assert.match(await page.text(), /Tally 控制台/);
   const st = await get("/api/status", cookie);
-  assert.equal(st.mockApi, true); assert.equal(st.writeEnabled, false); assert.equal(st.toolCount, 51); assert.equal(st.hiddenWriteTools, 4);
+  assert.equal(st.mockApi, true); assert.equal(st.writeEnabled, false); assert.equal(st.toolCount, 53); assert.equal(st.hiddenWriteTools, 4);
   assert.doesNotMatch(JSON.stringify(st), /s3cret/);
   const { tools } = await get("/api/tools", cookie);
+  assert.ok(tools.some((t: any) => t.name === "get_vendor_report_overview" && t.enabled && !t.write));
+  assert.ok(tools.some((t: any) => t.name === "compare_vendor_report_with_direct_spend" && t.enabled && !t.write));
   const create = tools.find((t: any) => t.name === "create_direct_spend");
   assert.equal(create.enabled, false); assert.equal(create.write, true); assert.ok(create.inputSchema.properties.net_spend);
   const call = await (await post("/api/tools/call", { name: "get_clients", arguments: { client_name: "lyft" } }, cookie)).json();
@@ -80,6 +84,15 @@ test("web: dashboard and MCP calls are attributed to the right person", async ()
   assert.equal(tokens.length, 1); assert.equal(JSON.stringify(tokens).includes(token), false, "plaintext token never listed");
   assert.equal((await post("/api/tokens/revoke", { id: tokens[0].id }, cookie)).status, 200);
   assert.equal((await mcpCall(token, "whoami")).status, 401);
+});
+
+test("web: vendor reconciliation uses the audited tool route", async () => {
+  const cookie = await login("vendor@feedmob.com");
+  const args = { partner: "samsung", start_date: "2026-11-01", end_date: "2026-11-01" };
+  const r = await (await post("/api/tools/call", { name: "compare_vendor_report_with_direct_spend", arguments: args }, cookie)).json();
+  assert.equal(r.ok, true); assert.equal(r.data.counts.match, 1);
+  const { calls } = await get("/api/usage/calls?limit=1", cookie);
+  assert.equal(calls[0].caller, "vendor@feedmob.com"); assert.equal(calls[0].tool, "compare_vendor_report_with_direct_spend");
 });
 
 test("web: logout ends the session", async () => {

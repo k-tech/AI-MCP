@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "description": "Tally: FeedMob spend, rate and report MCP server with a human console",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/src/index.js",
   "bin": {
-    "tally": "dist/index.js"
+    "tally": "dist/src/index.js"
   },
   "scripts": {
     "build": "tsc",

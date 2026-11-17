@@ -10,6 +10,7 @@ import { getUsageStats } from "./tools/usage.js";
 import { findDirectSpend, createDirectSpendFromSources } from "./tools/finder.js";
 import { RAW_REPORT_TOOLS } from "./tools/raw-reports.js";
 import { getClientReportOverview, compareClientReport } from "./tools/report-overview.js";
+import { getVendorReportOverview, compareVendorReport } from "./tools/vendor-reports.js";
 import type { Source, UsageStore } from "./usage.js";
 import { VERSION } from "./version.js";
 
@@ -18,7 +19,7 @@ export { VERSION };
 export const ALL_TOOLS: ToolDef[] = [
   whoami, getClients,
   getDirectSpends, getClickUrlHistories, findDirectSpend, createDirectSpend, createDirectSpendFromSources, updateDirectSpend, updateClickUrlPrices,
-  getVendors, getCampaigns, getReportNames, getClientReportSpends, getClientReportOverview, compareClientReport,
+  getVendors, getCampaigns, getReportNames, getClientReportSpends, getClientReportOverview, compareClientReport, getVendorReportOverview, compareVendorReport,
   getUsageStats,
   ...RAW_REPORT_TOOLS,
 ];

@@ -341,7 +341,7 @@
       const d = r.data;
       $("rpTiles").hidden = $("rpResult").hidden = $("rpCampPanel").hidden = false;
       $("rpMeta").hidden = false;
-      $("rpMeta").innerHTML = `后台名称：<b>${esc(d.admin_name || "未确认")}</b> · 接口名：<code>${esc(d.report_name)}</code> · 读取环境：${esc((STATUS.readApiBase || "").replace(/^https?:\/\//, ""))}`;
+      $("rpMeta").innerHTML = `后台名称：<b>${esc(d.admin_name || "未确认")}</b> · 接口名：<code>${esc(d.report_name)}</code> · 读取环境：${esc((STATUS.readApiBase || "").replace(/^https?:\/\//, ""))} · ${esc(d.currency_info.warning || `币种：${d.currency_info.currency || "未知"}`)} · ${esc(d.completeness_warning)}`;
       $("rpTotal").textContent = money(d.total_gross); $("rpRows").textContent = num(d.rows);
       $("rpVendors").textContent = d.by_vendor.length; $("rpClients").textContent = d.clients.join("、") || "—";
       bars($("rpByDay"), d.by_day.map((x) => ({ label: x.key, value: x.gross })), money);
@@ -370,7 +370,7 @@
           <td style="font-size:12.5px">${esc(x.vendors.join("、") || "—")}</td><td class="num">${x.rows ? money(x.total_gross) : "—"}</td>
           <td>${x.rows ? `<button type="button" data-open="${esc(x.name)}">对账</button>` : ""}</td></tr>`; }).join("");
       $("ovRows").querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openReport(b.dataset.open, $("ovStart").value, $("ovEnd").value)));
-      $("ovMeta").textContent = `${r.summary} · ${(r.ms / 1000).toFixed(1)} 秒`;
+      $("ovMeta").textContent = `${r.summary} · 日期覆盖不代表数据完整；币种及分页需核实 · ${(r.ms / 1000).toFixed(1)} 秒`;
     } catch (e) { $("ovMeta").textContent = e.message; toast("统计失败"); }
     finally { $("ovGo").disabled = false; }
   }
@@ -402,12 +402,30 @@
         return `<tr><td class="mono">${b.click_url_id}</td><td>${esc(b.vendor_name)}</td><td>${esc(b.campaign_name)}</td><td class="num">${money(b.report_gross)}</td><td class="num">${money(b.direct_gross)}</td>
           <td class="num${diff < 0 ? " neg" : ""}">${money(diff)}</td><td class="num">${b.diff_days} 天</td><td>${b.missing_in_report.length ? `<span class="pill err">${b.missing_in_report.length} 天</span> ${esc(b.missing_in_report.map((x) => x.slice(5)).join("、"))}` : "—"}</td></tr>`; }).join("");
       renderCompareRows();
-      $("cmpMeta").textContent = `${d.start_date} ~ ${d.end_date} · ${r.ms} ms`;
+      $("cmpMeta").textContent = `${d.start_date} ~ ${d.end_date} · ${d.currency_info.warning || `币种：${d.currency_info.currency || "未知"}`} · ${d.completeness_warning} · ${r.ms} ms`;
     } catch (e) { $("cmpMeta").textContent = e.message; toast("对账失败"); }
     finally { btn.disabled = false; }
   }
   $("rpCompare").addEventListener("click", runCompare);
   $("cmpAll").addEventListener("change", renderCompareRows);
+
+  $("vrStart").value = daysAgo(14); $("vrEnd").value = daysAgo(1);
+  async function vendorReport(compare) {
+    $("vrSummary").textContent = "查询中…"; $("vrResult").hidden = true;
+    try {
+      const args = { partner: $("vrPartner").value, start_date: $("vrStart").value, end_date: $("vrEnd").value };
+      if ($("vrClient").value) args.client_id = Number($("vrClient").value);
+      if ($("vrIds").value.trim()) args.report_ids = JSON.parse($("vrIds").value);
+      if (compare) {
+        if ($("vrScope").value.trim()) args.click_url_ids = $("vrScope").value.split(",").map((x) => x.trim()).filter(Boolean);
+        if ($("vrTolerance").value !== "") args.tolerance = Number($("vrTolerance").value);
+      }
+      const result = await mustTool(compare ? "compare_vendor_report_with_direct_spend" : "get_vendor_report_overview", args);
+      $("vrSummary").textContent = result.summary; $("vrOutput").textContent = JSON.stringify(result.data, null, 2); $("vrResult").hidden = false;
+    } catch (e) { $("vrSummary").textContent = e.message; }
+  }
+  $("vrForm").addEventListener("submit", (e) => { e.preventDefault(); vendorReport(false); });
+  $("vrCompare").addEventListener("click", () => vendorReport(true));
 
   let vendors = [], vdFilter = { status: "", type: "" };
   async function loadVendors() {
