@@ -389,7 +389,7 @@
     $("rpForm").requestSubmit(); runCompare();
   }
   let cmpData = null;
-  const CMP = { match: ["ok", "一致"], diff: ["warn", "金额不同"], missing_in_report: ["err", "报表缺失"], missing_in_direct: ["idle", "direct 缺失"] };
+  const CMP = { match: ["ok", "一致"], diff: ["warn", "金额不同"], missing_in_report: ["err", "报表缺失"], missing_in_direct: ["idle", "direct 缺失"], outside_report_scope: ["warn", "报表范围待确认"] };
   function renderCompareRows() {
     if (!cmpData) return;
     const rows = $("cmpAll").checked ? cmpData.rows : cmpData.rows.filter((x) => x.status !== "match");
@@ -409,7 +409,7 @@
         return `<tr><td class="mono">${b.click_url_id}</td><td>${esc(b.vendor_name)}</td><td>${esc(b.campaign_name)}</td><td class="num">${money(b.report_gross)}</td><td class="num">${money(b.direct_gross)}</td>
           <td class="num${diff < 0 ? " neg" : ""}">${money(diff)}</td><td class="num">${b.diff_days} 天</td><td>${b.missing_in_report.length ? `<span class="pill err">${b.missing_in_report.length} 天</span> ${esc(b.missing_in_report.map((x) => x.slice(5)).join("、"))}` : "—"}</td></tr>`; }).join("");
       renderCompareRows();
-      $("cmpMeta").textContent = `${d.start_date} ~ ${d.end_date} · ${d.currency_info.warning || `币种：${d.currency_info.currency || "未知"}`} · ${d.completeness_warning} · ${r.ms} ms`;
+      $("cmpMeta").textContent = `${d.start_date} ~ ${d.end_date} · ${d.scope.warning} · ${d.currency_info.warning || `币种：${d.currency_info.currency || "未知"}`} · ${d.completeness_warning} · ${r.ms} ms`;
     } catch (e) { $("cmpMeta").textContent = e.message; toast("对账失败"); }
     finally { btn.disabled = false; }
   }
