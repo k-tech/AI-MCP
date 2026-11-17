@@ -51,3 +51,12 @@ test("compare: a report with no data says so", async () => {
   const r = await invokeTool(compareClientReport, { report_name: "Empty One", start_date: "2026-11-01", end_date: "2026-11-03" }, ctx());
   assert.equal(r.ok, true); assert.match(r.summary, /没有任何数据/);
 });
+
+test("client reconciliation exposes unknown currency and rejects malformed or mixed data", async () => {
+  const normal = await invokeTool(compareClientReport, { report_name: "Chime Agency Spend", start_date: "2026-11-01", end_date: "2026-11-03" }, ctx());
+  assert.equal((normal.data as any).reconciliation_verified, false);
+  assert.ok((normal.data as any).currency_info.unknown_currency_rows > 0);
+  const api = fakeApi({ "GET /ai/api/client_report_spends": () => [200, { data: [{ ...rr(1, "2026-11-01", 5), currency: "USD" }, { ...rr(1, "2026-11-01", 5), currency: "EUR" }] }] });
+  const mixed = await invokeTool(compareClientReport, { report_name: "X", start_date: "2026-11-01", end_date: "2026-11-03" }, makeContext(cfg, { fetchImpl: api.fetchImpl }));
+  assert.equal(mixed.ok, false); assert.match(mixed.summary, /多种币种/);
+});

@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { defineTool } from "./registry.js";
 import { rowsOf } from "../http.js";
+import { completeRows, validateRows, currencyInfo, completenessWarning } from "./report-safety.js";
 import { date, assertRange, round2 } from "./schemas.js";
 
 export interface VendorRow { id: number; vendor_name: string; status: string; vendor_type: string; for_test: boolean; created_at: string }
@@ -75,7 +76,9 @@ export const getClientReportSpends = defineTool({
   },
   async run({ report_name, start_date, end_date, include_rows }, { api }) {
     assertRange(start_date, end_date);
-    const rows = rowsOf<ReportSpendRow>(await api.get("/ai/api/client_report_spends", { start_date, end_date, report_name }));
+    const rows = completeRows<ReportSpendRow>(await api.get("/ai/api/client_report_spends", { start_date, end_date, report_name }), "client report");
+    validateRows(rows, "client report", "spend_date", ["gross_spend"]);
+    const currency_info = currencyInfo(rows);
     const sum = <K extends string>(key: (r: ReportSpendRow) => K) => {
       const m = new Map<K, { gross: number; rows: number }>();
       for (const r of rows) { const g = m.get(key(r)) ?? { gross: 0, rows: 0 }; g.gross += Number(r.gross_spend) || 0; g.rows++; m.set(key(r), g); }
@@ -89,7 +92,7 @@ export const getClientReportSpends = defineTool({
     return {
       summary: `${report_name}：${start_date} ~ ${end_date} 共 ${rows.length} 行，gross 合计 ${total}，${byVendor.length} 个渠道`,
       data: {
-        report_name, ...adminName(report_name), source_note: SOURCE_NOTE, start_date, end_date, clients, total_gross: total, rows: rows.length,
+        report_name, ...adminName(report_name), currency_info, completeness_warning: completenessWarning, source_note: SOURCE_NOTE, start_date, end_date, clients, total_gross: total, rows: rows.length,
         by_vendor: byVendor, by_campaign: byCampaign, by_day: byDay,
         ...(include_rows ? { detail: rows.map(({ raw_log_rows, ...r }) => r) } : {}),
       },

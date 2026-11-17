@@ -26,7 +26,7 @@ test("get_campaigns: hides archived by default", async () => {
 });
 
 test("get_client_report_spends: totals by vendor, campaign and day; raw logs dropped", async () => {
-  const row = (vendor: string, campaign: string, day: string, gross: number) => ({ client_name: "Upside", vendor_name: vendor, campaign_name: campaign, spend_date: day, gross_spend: gross, raw_log_rows: [{ big: true }] });
+  const row = (vendor: string, campaign: string, day: string, gross: number) => ({ click_url_id: 1, client_name: "Upside", vendor_name: vendor, campaign_name: campaign, spend_date: day, gross_spend: gross, raw_log_rows: [{ big: true }] });
   const api = fakeApi({ "GET /ai/api/client_report_spends": () => [200, { status: 200, data: [row("Samsung", "C1", "2026-11-01", 100), row("Samsung", "C1", "2026-11-02", 44.5), row("Liftoff", "C2", "2026-11-01", 200)] }] });
   const r = await invokeTool(getClientReportSpends, { report_name: "Upside Spend", start_date: "2026-11-01", end_date: "2026-11-02", include_rows: true }, makeContext(cfg, { fetchImpl: api.fetchImpl }));
   const d = r.data as any;
