@@ -53,7 +53,7 @@ test("web: status, tool list and tool calls for a logged-in user", async () => {
   const page = await fetch(base + "/dashboard/", { headers: { cookie } });
   assert.equal(page.status, 200); assert.match(await page.text(), /Tally 控制台/);
   const st = await get("/api/status", cookie);
-  assert.equal(st.mockApi, true); assert.equal(st.writeEnabled, false); assert.equal(st.toolCount, 53); assert.equal(st.hiddenWriteTools, 4);
+  assert.equal(st.mockApi, true); assert.equal(st.writeEnabled, false); assert.equal(st.toolCount, 54); assert.equal(st.hiddenWriteTools, 4);
   assert.doesNotMatch(JSON.stringify(st), /s3cret/);
   const { tools } = await get("/api/tools", cookie);
   assert.ok(tools.some((t: any) => t.name === "get_vendor_report_overview" && t.enabled && !t.write));

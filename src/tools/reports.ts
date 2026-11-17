@@ -90,7 +90,7 @@ export const getClientReportSpends = defineTool({
     const byDay = sum((r) => r.spend_date).sort((a, b) => a.key.localeCompare(b.key));
     const clients = [...new Set(rows.map((r) => r.client_name))];
     return {
-      summary: `${report_name}：${start_date} ~ ${end_date} 共 ${rows.length} 行，gross 合计 ${total}，${byVendor.length} 个渠道`,
+      summary: `${report_name}：${start_date} ~ ${end_date} 返回 ${rows.length} 行，客户报表 gross 小计 ${total}，${byVendor.length} 个渠道；不是 Femini Total Spend，币种及上游完整性需核实。`,
       data: {
         report_name, ...adminName(report_name), currency_info, completeness_warning: completenessWarning, source_note: SOURCE_NOTE, start_date, end_date, clients, total_gross: total, rows: rows.length,
         by_vendor: byVendor, by_campaign: byCampaign, by_day: byDay,

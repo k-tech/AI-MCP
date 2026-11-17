@@ -60,3 +60,12 @@ Client overview/comparison API defaults to the previous 14 days ending yesterday
 | 4: usage/console | Implemented and mock tested; console identity is not independently verified and requires stronger authentication before team rollout. |
 
 After identifying the old test host and its callers, rotate the previously exposed test token and retire the old process. Do not treat the historical 19 failed original report calls as independently diagnosed. Daily Report purchase/cohort changes are outside this workflow.
+
+
+## Supplied partner report preview
+
+When a partner has no accessible API, `preview_supplied_spend_report` accepts caller-provided CSV text (header plus up to 1,000 rows), an explicit mapping for date, click URL, currency and net and/or gross columns, and the target `click_url_id` / `spend_date`. It returns matching rows, sums, currency, missing and duplicate warnings and, only when both amounts are present and unambiguous, `suggested_create` arguments for the existing `create_direct_spend` preview and user-confirmation workflow. It does not fetch email, Sheets, files or URLs, verify source completeness, infer a margin, or write spend. CSV is redacted from Tally usage logs. Validate report identity, duplicates, source completeness, currency and destination before approving a write.
+
+After `update_direct_spend` by URL and date, Tally reads back from the write environment and compares the requested net/gross fields when possible. A failed/ambiguous readback is reported as unverified and must be investigated before retrying. ID-only updates or other changed fields cannot be confirmed by that lookup. The console refreshes its existing query only when read and write environments match. The external Admin page may still need a manual refresh.
+
+The client report total is the sum of returned `client_report_spends.gross_spend` rows, not Femini Total Spend including overcap release or excluding client make-good. It cannot by itself establish equality with that different metric. Verify environment, date, scope, adjustments, source currency and completeness before comparison.

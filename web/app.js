@@ -200,8 +200,15 @@
           return;
         }
         $("wResult").innerHTML = `<p>${r.ok ? '<span class="pill ok">成功</span>' : '<span class="pill err">失败</span>'} ${esc(r.summary)}</p>${r.data ? `<pre class="code">${esc(JSON.stringify(r.data, null, 2))}</pre>` : ""}`;
-        if (r.ok) toast("已保存");
-      } catch (e) { $("wResult").innerHTML = `<p style="color:var(--err)">${esc(e.message)}</p>`; }
+        if (!r.ok) $("wResult").insertAdjacentHTML("beforeend", `<p class="notice">操作未确认；请先核实写入环境，不要自动重试。</p>`);
+        if (r.ok) {
+          toast("写入请求已成功，请核对读回状态");
+          if (tool === "update_direct_spend") {
+            $("wResult").insertAdjacentHTML("beforeend", `<p class="notice">${esc(r.data?.readback?.message || "请在写入环境核实。") } 外部 Admin 页面如仍显示旧值，请手动刷新。</p>`);
+            if (STATUS.readApiBase === STATUS.writeApiBase && (parseIds($("spClick").value).length || $("spClient").value.trim())) await querySpend();
+          }
+        }
+      } catch (e) { $("wResult").innerHTML = `<p style="color:var(--err)">${esc(e.message)}；请求结果未确认，请先核实，勿重复提交。</p>`; }
     };
   }
   ["w-create", "w-update"].forEach((id) => $(id).addEventListener("submit", (e) => {
@@ -341,7 +348,7 @@
       const d = r.data;
       $("rpTiles").hidden = $("rpResult").hidden = $("rpCampPanel").hidden = false;
       $("rpMeta").hidden = false;
-      $("rpMeta").innerHTML = `后台名称：<b>${esc(d.admin_name || "未确认")}</b> · 接口名：<code>${esc(d.report_name)}</code> · 读取环境：${esc((STATUS.readApiBase || "").replace(/^https?:\/\//, ""))} · ${esc(d.currency_info.warning || `币种：${d.currency_info.currency || "未知"}`)} · ${esc(d.completeness_warning)}`;
+      $("rpMeta").innerHTML = `后台名称：<b>${esc(d.admin_name || "未确认")}</b> · 接口名：<code>${esc(d.report_name)}</code> · 读取环境：${esc((STATUS.readApiBase || "").replace(/^https?:\/\//, ""))} · ${esc(d.source_note)} · ${esc(d.currency_info.warning || `币种：${d.currency_info.currency || "未知"}`)} · ${esc(d.completeness_warning)}`;
       $("rpTotal").textContent = money(d.total_gross); $("rpRows").textContent = num(d.rows);
       $("rpVendors").textContent = d.by_vendor.length; $("rpClients").textContent = d.clients.join("、") || "—";
       bars($("rpByDay"), d.by_day.map((x) => ({ label: x.key, value: x.gross })), money);

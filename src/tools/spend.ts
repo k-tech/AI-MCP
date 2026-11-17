@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { defineTool, type ToolContext } from "./registry.js";
 import { ApiError, rowsOf } from "../http.js";
-import { completeRows, validateRows, currencyInfo, completenessWarning } from "./report-safety.js";
+import { completeRows, validateRows, currencyInfo, completenessWarning, validAmount } from "./report-safety.js";
 import { amount, count, date, rate, margin, assertRange, round2 } from "./schemas.js";
 
 export interface SpendRow { click_url_id: number; campaign_name: string; date: string; feedmob_net_spend: number; feedmob_gross_spend: number }
@@ -96,7 +96,20 @@ export const updateDirectSpend = defineTool({
     if (!Object.keys(changes).length) throw new Error("没有要修改的字段");
     const body = { ...changes, audit_comment: auditTag(ctx, fields.audit_comment), ...(byId ? {} : { click_url_id, spend_date }) };
     const data = await ctx.writeApi.patch(`/ai/api/direct_spends/${byId ? id : "by_click_url"}`, body);
-    return { summary: `已修改 ${byId ? `NetSpend #${id}` : `click URL ${click_url_id} 在 ${spend_date}`} 的 ${Object.keys(changes).join("、")}`, data };
+    let readback: { status: string; row?: unknown; message: string } = { status: "unverified", message: "写入请求成功，但无法按 NetSpend ID 定位读取；请在写入环境核实。" };
+    if (!byId && click_url_id && spend_date) {
+      try {
+        const rows = completeRows<SpendRow>(await ctx.writeApi.get("/ai/api/direct_spends", { start_date: spend_date, end_date: spend_date, "click_url_ids[]": [click_url_id] }), "写入后读取");
+        const matches = rows.filter(r => Number(r.click_url_id) === click_url_id && r.date === spend_date);
+        const fieldsToCheck: Record<string, string> = { net_spend: "feedmob_net_spend", gross_spend: "feedmob_gross_spend" };
+        const keys = Object.keys(changes);
+        const comparable = keys.every(k => k in fieldsToCheck);
+        const row = matches.length === 1 ? matches[0] as unknown as Record<string, unknown> : undefined;
+        const verified = comparable && row && keys.every(k => validAmount(row[fieldsToCheck[k]]) && Number(row[fieldsToCheck[k]]) === Number(changes[k]));
+        readback = { status: verified ? "verified" : "unverified", ...(row ? { row } : {}), message: verified ? "已从写入环境读回并核对金额。" : "写入请求成功，但读回未能确认全部修改；请核实，不要自动重试。" };
+      } catch { readback = { status: "unverified", message: "写入请求成功，但写入环境读回失败；请核实，不要自动重试。" }; }
+    }
+    return { summary: `已修改 ${byId ? `NetSpend #${id}` : `click URL ${click_url_id} 在 ${spend_date}`} 的 ${Object.keys(changes).join("、")}；${readback.message}`, data: { write_result: data, readback } };
   },
 });
 
