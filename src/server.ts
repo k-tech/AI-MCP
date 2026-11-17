@@ -36,7 +36,7 @@ Entering a direct spend when the user did NOT give amounts — do not ask first,
    - Partner report (Samsung, YouAppi, Kayzen, Jampp, Remerge, Pubmatic, Beeswax, InMobi, Smadex, Liftoff): net = partner net spend for that click URL/day.
    - vendor_managed with a margin: gross = net ÷ (1 − margin/100); "Calculated from net" means the same.
    - A source Tally has no tool for (Google Sheet, partner email, an API not listed): say so and name the job owner (pa_users); do not guess.
-3. If the user supplies report CSV, use preview_supplied_spend_report with explicitly identified columns. Review source, currency, rows and amounts; use suggested_create with create_direct_spend only after user approval. Do not invent a missing amount or automatically write.
+3. If the user supplies report CSV, use preview_supplied_spend_report with explicitly identified columns. Review source, currency, rows and amounts. Target ledger currency is unverified: do not generate create arguments or write from these amounts.
 4. Show raw rows → the calculation → the result before writing. Never invent numbers. Check get_direct_spends first so you do not create a duplicate.`;
 
 /** Tools available under this config: write tools only when ENABLE_WRITE=true. */

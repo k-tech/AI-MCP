@@ -9,10 +9,11 @@ const cfg = loadConfig({ FEEDMOB_API_BASE: "https://fake.test", FEEDMOB_KEY: "k"
 const base = { click_url_id: 23203, spend_date: "2026-11-05", source_name: "example CSV", columns: { date: "day", click_url_id: "url", currency: "ccy", net: "net", gross: "gross" } };
 const csv = "day,url,ccy,net,gross\n2026-11-05,23203,USD,10,15\n2026-11-05,23203,USD,5,7\n2026-11-06,23203,USD,100,200";
 const run = (csv_text: string) => invokeTool(previewSuppliedSpendReport, { ...base, csv_text }, makeContext(cfg));
-test("supplied CSV: sums only explicit date and URL, proposes normal create arguments, never writes", async () => {
+test("supplied CSV: sums only explicit date and URL, blocks create without ledger currency", async () => {
   const r = await run(csv); const d = r.data as any;
   assert.equal(r.ok, true); assert.equal(d.matched_rows, 2); assert.equal(d.currency, "USD");
-  assert.deepEqual(d.suggested_create, { click_url_id: 23203, spend_date: "2026-11-05", net_spend: 15, gross_spend: 22 });
+  assert.equal(d.net, 15); assert.equal(d.gross, 22); assert.equal(d.suggested_create, null);
+  const eur = await run(csv.replaceAll("USD", "EUR")); assert.equal((eur.data as any).suggested_create, null);
 });
 test("supplied CSV: missing amounts, duplicate rows and currency ambiguity do not create a proposal", async () => {
   assert.equal(((await run("day,url,ccy,net,gross\n2026-11-05,23203,USD,5,")).data as any).suggested_create, null);

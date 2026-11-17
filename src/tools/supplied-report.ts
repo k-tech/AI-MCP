@@ -7,7 +7,7 @@ import { validAmount } from "./report-safety.js";
 
 export const previewSuppliedSpendReport = defineTool({
   name: "preview_supplied_spend_report", title: "预览自带报表", stage: 2, write: false,
-  description: "Preview caller-supplied CSV for one click URL and date. Explicit column mapping and currency are required. Never fetches files or URLs and never writes. Review the source, matched rows, currency and amounts; only then use the existing create_direct_spend preview/confirmation workflow. No rate or margin is guessed.",
+  description: "Preview caller-supplied CSV for one click URL and date. Explicit column mapping and currency are required. Never fetches files or URLs and never writes. Review the source, matched rows, currency and amounts; It does not generate create arguments until the target ledger currency can be established. No rate or margin is guessed.",
   schema: {
     click_url_id: z.coerce.number().int().positive(), spend_date: date("Spend 日期"),
     source_name: z.string().trim().min(1).max(120).describe("Human-readable source, not a URL to fetch"),
@@ -44,7 +44,9 @@ export const previewSuppliedSpendReport = defineTool({
     const net = total(columns.net), gross = total(columns.gross);
     const duplicate_rows = selected.length - new Set(selected.map((r) => JSON.stringify(r))).size;
     const warnings = ["来源由调用者提供，无法验证完整性、口径或重复；请核对原报表与写入环境。", ...(duplicate_rows ? [`存在 ${duplicate_rows} 行完全重复，请核实后重新预览。`] : []), ...((net === null || gross === null) ? ["net 或 gross 缺失；不推算缺失金额。"] : [])];
-    const suggested_create = net !== null && gross !== null && !duplicate_rows ? { click_url_id, spend_date, net_spend: net, gross_spend: gross } : null;
+    // The create API has no currency field; the target ledger currency is not established.
+    warnings.push("目标账本币种未确认，禁止生成录入参数；核实账本币种及金额口径后再处理。");
+    const suggested_create = null;
     return { summary: `匹配 ${selected.length} 行；币种 ${[...currencies][0]}；${warnings.join(" ")}`, data: { source_name, click_url_id, spend_date, currency: [...currencies][0], matched_rows: selected.length, total_rows: rows.length, duplicate_rows, net, gross, warnings, detail: selected.map(r => ({ date: r[index(columns.date)], click_url_id: Number(r[index(columns.click_url_id)]), currency: r[index(columns.currency)], net: columns.net ? r[index(columns.net)] : null, gross: columns.gross ? r[index(columns.gross)] : null })), suggested_create } };
   },
 });
