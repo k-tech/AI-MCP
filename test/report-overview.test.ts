@@ -78,6 +78,7 @@ test("explicit URL scope includes previously unseen URLs without asserting repor
   assert.equal(d.rows.find((x: any) => x.click_url_id === 3).direct_gross, 0);
   assert.equal(d.rows.find((x: any) => x.click_url_id === 3).report_gross, null);
   assert.equal(d.rows.find((x: any) => x.click_url_id === 4).status, "outside_report_scope");
+  assert.equal(d.by_click_url.find((x: any) => x.click_url_id === 4).report_gross, null);
   assert.equal(d.totals.direct_gross, 18); assert.equal(d.totals.outside_report_scope_gross, 8);
   assert.equal(d.ignored_out_of_scope_rows, 1); assert.ok(d.currency_info.warning); assert.ok(d.completeness_warning);
   assert.match(r.summary, /不代表全部客户或渠道/);
@@ -87,6 +88,7 @@ test("empty report still compares explicitly selected URLs", async () => {
   const r = await invokeTool(compareClientReport, { report_name: "Empty", start_date: "2026-11-01", end_date: "2026-11-01", click_url_ids: [4] }, makeContext(cfg, { fetchImpl: api.fetchImpl }));
   assert.equal(r.ok, true); assert.equal((r.data as any).rows[0].status, "outside_report_scope");
   assert.equal((r.data as any).rows[0].report_gross, null);
+  assert.equal((r.data as any).totals.report_gross, null);
 });
 
 test("null direct amount fails closed instead of being treated as zero", async () => {

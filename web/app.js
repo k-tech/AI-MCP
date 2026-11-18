@@ -400,14 +400,17 @@
   async function runCompare() {
     const btn = $("rpCompare"); btn.disabled = true; $("cmpPanel").hidden = false; $("cmpMeta").textContent = "对账中…";
     try {
-      const r = await mustTool("compare_client_report_with_direct_spend", { report_name: $("rpName").value, start_date: $("rpStart").value, end_date: $("rpEnd").value });
+      const rawScope = $("rpScope").value.trim();
+      const parts = rawScope ? rawScope.split(/[\s,，]+/) : [];
+      if (parts.some((x) => !/^\d+$/.test(x) || !Number.isSafeInteger(Number(x)) || Number(x) <= 0)) throw new Error("额外对照范围只能填写正整数 Click URL ID");
+      const r = await mustTool("compare_client_report_with_direct_spend", { report_name: $("rpName").value, start_date: $("rpStart").value, end_date: $("rpEnd").value, ...(parts.length ? { click_url_ids: parts.map(Number) } : {}) });
       cmpData = r.data; const d = r.data;
       if (!d.counts) { $("cmpCounts").innerHTML = ""; $("cmpByUrl").innerHTML = empty(8, r.summary); $("cmpRows").innerHTML = ""; $("cmpMeta").textContent = ""; return; }
       $("cmpCounts").innerHTML = Object.entries(d.counts).map(([k, n]) => `<span class="pill ${CMP[k][0]}">${CMP[k][1]} ${n}</span>`).join(" ")
         + ` <span class="muted" style="font-size:12.5px">报表 gross ${money(d.totals.report_gross)} · direct gross ${money(d.totals.direct_gross)} · 报表缺失部分 ${money(d.totals.missing_in_report_gross)}</span>`;
-      $("cmpByUrl").innerHTML = d.by_click_url.map((b) => { const diff = b.report_gross - b.direct_gross;
-        return `<tr><td class="mono">${b.click_url_id}</td><td>${esc(b.vendor_name)}</td><td>${esc(b.campaign_name)}</td><td class="num">${money(b.report_gross)}</td><td class="num">${money(b.direct_gross)}</td>
-          <td class="num${diff < 0 ? " neg" : ""}">${money(diff)}</td><td class="num">${b.diff_days} 天</td><td>${b.missing_in_report.length ? `<span class="pill err">${b.missing_in_report.length} 天</span> ${esc(b.missing_in_report.map((x) => x.slice(5)).join("、"))}` : "—"}</td></tr>`; }).join("");
+      $("cmpByUrl").innerHTML = d.by_click_url.map((b) => { const diff = b.report_gross == null || b.direct_gross == null ? null : b.report_gross - b.direct_gross;
+        return `<tr><td class="mono">${b.click_url_id}${b.report_membership === "unconfirmed" ? ' <span class="pill warn">归属待确认</span>' : ""}</td><td>${esc(b.vendor_name)}</td><td>${esc(b.campaign_name)}</td><td class="num">${money(b.report_gross)}</td><td class="num">${money(b.direct_gross)}</td>
+          <td class="num${diff < 0 ? " neg" : ""}">${diff == null ? "—" : money(diff)}</td><td class="num">${b.diff_days} 天</td><td>${b.missing_in_report.length ? `<span class="pill err">${b.missing_in_report.length} 天</span> ${esc(b.missing_in_report.map((x) => x.slice(5)).join("、"))}` : "—"}</td></tr>`; }).join("");
       renderCompareRows();
       $("cmpMeta").textContent = `${d.start_date} ~ ${d.end_date} · ${d.scope.warning} · ${d.currency_info.warning || `币种：${d.currency_info.currency || "未知"}`} · ${d.completeness_warning} · ${r.ms} ms`;
     } catch (e) { $("cmpMeta").textContent = e.message; toast("对账失败"); }
