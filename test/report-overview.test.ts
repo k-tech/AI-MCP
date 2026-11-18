@@ -41,7 +41,7 @@ test("compare: match, diff, missing in report (incl. a click URL seen only in th
   const d = r.data as any;
   assert.deepEqual(d.rows.map((x: any) => [x.click_url_id, x.date, x.status, x.diff]), [
     [1, "2026-11-01", "match", 0], [2, "2026-11-01", "missing_in_report", null], [1, "2026-11-02", "missing_in_report", null], [1, "2026-11-03", "diff", -5]]);
-  assert.deepEqual(d.counts, { match: 1, diff: 1, missing_in_report: 2, missing_in_direct: 0 });
+  assert.deepEqual(d.counts, { match: 1, diff: 1, missing_in_report: 2, missing_in_direct: 0, outside_report_scope: 0 });
   assert.equal(d.totals.missing_in_report_gross, 80);
   const lg = d.by_click_url.find((x: any) => x.click_url_id === 2);
   assert.equal(lg.vendor_name, "LG"); assert.deepEqual(lg.missing_in_report, ["2026-11-01"]);
@@ -59,4 +59,40 @@ test("client reconciliation exposes unknown currency and rejects malformed or mi
   const api = fakeApi({ "GET /ai/api/client_report_spends": () => [200, { data: [{ ...rr(1, "2026-11-01", 5), currency: "USD" }, { ...rr(1, "2026-11-01", 5), currency: "EUR" }] }] });
   const mixed = await invokeTool(compareClientReport, { report_name: "X", start_date: "2026-11-01", end_date: "2026-11-03" }, makeContext(cfg, { fetchImpl: api.fetchImpl }));
   assert.equal(mixed.ok, false); assert.match(mixed.summary, /多种币种/);
+});
+
+test("explicit URL scope includes previously unseen URLs without asserting report membership", async () => {
+  const api = fakeApi({
+    "GET /ai/api/client_report_spends": () => [200, { data: [rr(1, "2026-11-01", 10)] }],
+    "GET /ai/api/direct_spends": () => [200, { data: [
+      { click_url_id: 1, date: "2026-11-01", campaign_name: "C1", feedmob_net_spend: 5, feedmob_gross_spend: 10 },
+      { click_url_id: 3, date: "2026-11-01", campaign_name: "C3", feedmob_net_spend: 0, feedmob_gross_spend: 0 },
+      { click_url_id: 4, date: "2026-11-01", campaign_name: "C4", feedmob_net_spend: 6, feedmob_gross_spend: 8 },
+      { click_url_id: 99, date: "2026-11-01", campaign_name: "unrelated", feedmob_net_spend: 999, feedmob_gross_spend: 999 },
+    ] }],
+  });
+  const r = await invokeTool(compareClientReport, { report_name: "X", start_date: "2026-11-01", end_date: "2026-11-01", click_url_ids: [3, 4] }, makeContext(cfg, { fetchImpl: api.fetchImpl }));
+  const d = r.data as any;
+  assert.equal(r.ok, true); assert.deepEqual(d.scope.outside_report_history_click_url_ids, [3, 4]);
+  assert.equal(d.counts.outside_report_scope, 2); assert.equal(d.counts.missing_in_report, 0);
+  assert.equal(d.rows.find((x: any) => x.click_url_id === 3).direct_gross, 0);
+  assert.equal(d.rows.find((x: any) => x.click_url_id === 3).report_gross, null);
+  assert.equal(d.rows.find((x: any) => x.click_url_id === 4).status, "outside_report_scope");
+  assert.equal(d.by_click_url.find((x: any) => x.click_url_id === 4).report_gross, null);
+  assert.equal(d.totals.direct_gross, 18); assert.equal(d.totals.outside_report_scope_gross, 8);
+  assert.equal(d.ignored_out_of_scope_rows, 1); assert.ok(d.currency_info.warning); assert.ok(d.completeness_warning);
+  assert.match(r.summary, /不代表全部客户或渠道/);
+});
+test("empty report still compares explicitly selected URLs", async () => {
+  const api = fakeApi({ "GET /ai/api/client_report_spends": () => [200, { data: [] }], "GET /ai/api/direct_spends": () => [200, { data: [{ click_url_id: 4, date: "2026-11-01", campaign_name: "C4", feedmob_net_spend: 1, feedmob_gross_spend: 2 }] }] });
+  const r = await invokeTool(compareClientReport, { report_name: "Empty", start_date: "2026-11-01", end_date: "2026-11-01", click_url_ids: [4] }, makeContext(cfg, { fetchImpl: api.fetchImpl }));
+  assert.equal(r.ok, true); assert.equal((r.data as any).rows[0].status, "outside_report_scope");
+  assert.equal((r.data as any).rows[0].report_gross, null);
+  assert.equal((r.data as any).totals.report_gross, null);
+});
+
+test("null direct amount fails closed instead of being treated as zero", async () => {
+  const api = fakeApi({ "GET /ai/api/client_report_spends": () => [200, { data: [] }], "GET /ai/api/direct_spends": () => [200, { data: [{ click_url_id: 4, date: "2026-11-01", campaign_name: "C4", feedmob_net_spend: 0, feedmob_gross_spend: null }] }] });
+  const r = await invokeTool(compareClientReport, { report_name: "Empty", start_date: "2026-11-01", end_date: "2026-11-01", click_url_ids: [4] }, makeContext(cfg, { fetchImpl: api.fetchImpl }));
+  assert.equal(r.ok, false); assert.match(r.summary, /invalid_amount/);
 });

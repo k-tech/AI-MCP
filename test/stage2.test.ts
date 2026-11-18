@@ -69,8 +69,8 @@ test("update_direct_spend: by id → PATCH /:id; by click URL → PATCH by_click
   assert.equal((await invokeTool(updateDirectSpend, { id: 42, net_spend: 0 }, ctx)).ok, true);
   assert.deepEqual(api.seen[0].body, { net_spend: 0, audit_comment: "[Tally · leo@feedmob.com]" });
   assert.equal((await invokeTool(updateDirectSpend, { click_url_id: 5, spend_date: "2026-11-05", clicks_count: "0" }, ctx)).ok, true);
-  assert.equal(api.seen[1].path, "/ai/api/direct_spends/by_click_url");
-  assert.deepEqual(api.seen[1].body, { clicks_count: "0", audit_comment: "[Tally · leo@feedmob.com]", click_url_id: 5, spend_date: "2026-11-05" });
+  assert.equal(api.seen.find(x => x.path === "/ai/api/direct_spends/by_click_url")!.path, "/ai/api/direct_spends/by_click_url");
+  assert.deepEqual(api.seen.find(x => x.path === "/ai/api/direct_spends/by_click_url")!.body, { clicks_count: "0", audit_comment: "[Tally · leo@feedmob.com]", click_url_id: 5, spend_date: "2026-11-05" });
 });
 
 test("update_direct_spend: selector and empty-change validation", async () => {
@@ -103,4 +103,16 @@ test("update_direct_spend: a redirect (e.g. to SSO) is reported clearly instead 
   assert.equal(r.ok, false);
   assert.match(r.summary, /重定向.*SSO.*PATCH \/ai\/api\/direct_spends\/by_click_url/);
   assert.doesNotMatch(r.summary, /fetch failed/);
+});
+
+test("update spend reads back from write environment and does not retry when verification fails", async () => {
+  const api = fakeApi({
+    "PATCH /ai/api/direct_spends/by_click_url": () => [200, { status: 200 }],
+    "GET /ai/api/direct_spends": () => [200, { data: [{ click_url_id: 5, date: "2026-11-05", feedmob_net_spend: 12, feedmob_gross_spend: 20 }] }],
+  });
+  const r = await invokeTool(updateDirectSpend, { click_url_id: 5, spend_date: "2026-11-05", net_spend: 12 }, makeContext(cfgW, { fetchImpl: api.fetchImpl }));
+  assert.equal((r.data as any).readback.status, "verified"); assert.deepEqual(api.seen.map(x => x.method), ["PATCH", "GET"]);
+  const bad = fakeApi({ "PATCH /ai/api/direct_spends/by_click_url": () => [200, {}], "GET /ai/api/direct_spends": () => [500, {}] });
+  const u = await invokeTool(updateDirectSpend, { click_url_id: 5, spend_date: "2026-11-05", net_spend: 12 }, makeContext(cfgW, { fetchImpl: bad.fetchImpl }));
+  assert.equal(u.ok, true); assert.equal((u.data as any).readback.status, "unverified"); assert.deepEqual(bad.seen.map(x => x.method), ["PATCH", "GET"]);
 });

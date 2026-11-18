@@ -38,7 +38,8 @@ export async function invokeTool(def: ToolDef, rawArgs: unknown, ctx: ToolContex
     catch (e) { out = { summary: (e as Error).message || "未知错误", isError: true }; }
   }
   const ms = Math.round(performance.now() - t0);
-  try { ctx.usage?.record({ caller: ctx.caller, source: ctx.source, tool: def.name, args: rawArgs, durationMs: ms, ok: !out.isError, error: out.isError ? out.summary : undefined }); }
+  const loggedArgs = def.name === "preview_supplied_spend_report" && rawArgs && typeof rawArgs === "object" ? { ...rawArgs, csv_text: "[redacted]" } : rawArgs;
+  try { ctx.usage?.record({ caller: ctx.caller, source: ctx.source, tool: def.name, args: loggedArgs, durationMs: ms, ok: !out.isError, error: out.isError ? out.summary : undefined }); }
   catch (e) { console.error("usage log failed:", (e as Error).message); }
   return { ...out, ok: !out.isError, ms, tool: def.name };
 }

@@ -31,6 +31,8 @@ test("get_client_report_spends: totals by vendor, campaign and day; raw logs dro
   const r = await invokeTool(getClientReportSpends, { report_name: "Upside Spend", start_date: "2026-11-01", end_date: "2026-11-02", include_rows: true }, makeContext(cfg, { fetchImpl: api.fetchImpl }));
   const d = r.data as any;
   assert.equal(d.total_gross, 344.5);
+  assert.match(r.summary, /客户报表 gross 小计.*不是 Femini Total Spend/);
+  assert.match(d.source_note, /不是 FeedMob 的 direct spend/);
   assert.deepEqual(d.by_vendor, [{ key: "Liftoff", gross: 200, rows: 1 }, { key: "Samsung", gross: 144.5, rows: 2 }]);
   assert.deepEqual(d.by_day.map((x: any) => [x.key, x.gross]), [["2026-11-01", 300], ["2026-11-02", 44.5]]);
   assert.equal(d.detail.length, 3); assert.equal("raw_log_rows" in d.detail[0], false);

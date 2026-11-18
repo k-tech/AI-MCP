@@ -86,3 +86,13 @@ test("finder tools are registered; the writing one only with ENABLE_WRITE", () =
   const ro = toolsFor(loadConfig({ FEEDMOB_API_BASE: "https://a.b", FEEDMOB_KEY: "k", FEEDMOB_SECRET: "s", FEEDMOB_USER_EMAIL: "a@feedmob.com" })).map((t) => t.name);
   assert.ok(ro.includes("find_direct_spend") && !ro.includes("create_direct_spend_from_sources"));
 });
+
+
+test("known Chime external jobs identify source without inventing values", async () => {
+  for (const [name, source] of [["CreateChimeLgSpendJob", /LG Ads 邮件报表/], ["CreateChimeVizioSpendJob", /Vizio 邮件报表/]] as const) {
+    const j = { ...job("vendor report", "vendor report"), job: name };
+    const r = await run(findDirectSpend, world({ jobs: [j], rate: { ...rate, client_paid_action: "vendor_managed", vendor_paid_action: "vendor_managed" } }));
+    assert.equal((r.data as any).status, "not_found"); assert.match(r.summary, source);
+    assert.equal((r.data as any).net.value, null); assert.match(r.summary, /未接通自动读取/);
+  }
+});

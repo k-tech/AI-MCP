@@ -200,8 +200,15 @@
           return;
         }
         $("wResult").innerHTML = `<p>${r.ok ? '<span class="pill ok">成功</span>' : '<span class="pill err">失败</span>'} ${esc(r.summary)}</p>${r.data ? `<pre class="code">${esc(JSON.stringify(r.data, null, 2))}</pre>` : ""}`;
-        if (r.ok) toast("已保存");
-      } catch (e) { $("wResult").innerHTML = `<p style="color:var(--err)">${esc(e.message)}</p>`; }
+        if (!r.ok) $("wResult").insertAdjacentHTML("beforeend", `<p class="notice">操作未确认；请先核实写入环境，不要自动重试。</p>`);
+        if (r.ok) {
+          toast("写入请求已成功，请核对读回状态");
+          if (tool === "update_direct_spend") {
+            $("wResult").insertAdjacentHTML("beforeend", `<p class="notice">${esc(r.data?.readback?.message || "请在写入环境核实。") } 外部 Admin 页面如仍显示旧值，请手动刷新。</p>`);
+            if (STATUS.readApiBase === STATUS.writeApiBase && (parseIds($("spClick").value).length || $("spClient").value.trim())) await querySpend();
+          }
+        }
+      } catch (e) { $("wResult").innerHTML = `<p style="color:var(--err)">${esc(e.message)}；请求结果未确认，请先核实，勿重复提交。</p>`; }
     };
   }
   ["w-create", "w-update"].forEach((id) => $(id).addEventListener("submit", (e) => {
@@ -209,6 +216,27 @@
   }));
 
   /* ---- auto-find spend for the create form ---- */
+  $("supFile").addEventListener("change", async () => {
+    const file = $("supFile").files[0]; if (!file) return;
+    if (file.size > 100000) { $("supSummary").textContent = "CSV 文件超过 100,000 字节"; $("supCsv").value = ""; return; }
+    $("supCsv").value = await file.text(); $("supSummary").textContent = "已读取 CSV 文件，请核对字段和映射。";
+  });
+  $("suppliedForm").addEventListener("submit", async (e) => {
+    e.preventDefault(); $("supSummary").textContent = "检查中…"; $("supOutput").textContent = "";
+    try {
+      const filters = $("supFilters").value.trim();
+      const mapping = filters ? { basis: $("supBasis").value.trim(), filters: JSON.parse(filters), ...($("supMapStart").value ? { effective_from: $("supMapStart").value } : {}), ...($("supMapEnd").value ? { effective_to: $("supMapEnd").value } : {}) } : undefined;
+      const ledger = $("supLedgerCurrency").value.trim() || $("supLedgerBasis").value.trim() ? { currency: $("supLedgerCurrency").value.trim(), basis: $("supLedgerBasis").value.trim() } : undefined;
+      const rulePresent = ["supMargin", "supRuleCurrency", "supRuleStart", "supRuleEnd", "supRuleBasis"].some(id => $(id).value.trim());
+      if (rulePresent && ["supMargin", "supRuleCurrency", "supRuleStart", "supRuleEnd", "supRuleBasis"].some(id => !$(id).value.trim())) throw new Error("计费规则字段不完整：请填写 margin、币种、生效起止日和依据");
+      const billing_rule = rulePresent ? { type: "margin_on_gross", margin_percent: Number($("supMargin").value), currency: $("supRuleCurrency").value.trim(), effective_from: $("supRuleStart").value, effective_to: $("supRuleEnd").value, basis: $("supRuleBasis").value.trim() } : undefined;
+      const columns = { date: $("supDay").value.trim(), currency: $("supCurrency").value.trim(), net: $("supNet").value.trim() };
+      if ($("supGross").value.trim()) columns.gross = $("supGross").value.trim();
+      if ($("supId").value.trim()) columns.click_url_id = $("supId").value.trim();
+      const r = await mustTool("preview_supplied_spend_report", { click_url_id: Number($("supUrl").value), spend_date: $("supDate").value, source_name: $("supSource").value, csv_text: $("supCsv").value, columns, ...(mapping ? { mapping } : {}), ...(ledger ? { ledger } : {}), ...(billing_rule ? { billing_rule } : {}), check_existing: true });
+      $("supSummary").textContent = r.summary; $("supOutput").textContent = JSON.stringify(r.data, null, 2);
+    } catch (err) { $("supSummary").textContent = err.message; }
+  });
   $("spFind").addEventListener("click", async () => {
     const form = $("w-create"), get = (n) => form.querySelector(`[name=${n}]`);
     const id = Number(get("click_url_id").value.trim()), day = get("spend_date").value;
@@ -335,13 +363,15 @@
     } catch (e) { $("rpName").innerHTML = `<option>加载失败：${esc(e.message)}</option>`; }
   }
   $("rpForm").addEventListener("submit", async (e) => {
-    e.preventDefault(); $("rpGo").disabled = true;
+    e.preventDefault();
+    if ($("rpBasis").value === "direct") { $("rpTiles").hidden = $("rpResult").hidden = $("rpCampPanel").hidden = $("rpMeta").hidden = true; await runCompare(); return; }
+    $("rpGo").disabled = true;
     try {
       const r = await mustTool("get_client_report_spends", { report_name: $("rpName").value, start_date: $("rpStart").value, end_date: $("rpEnd").value });
       const d = r.data;
       $("rpTiles").hidden = $("rpResult").hidden = $("rpCampPanel").hidden = false;
       $("rpMeta").hidden = false;
-      $("rpMeta").innerHTML = `后台名称：<b>${esc(d.admin_name || "未确认")}</b> · 接口名：<code>${esc(d.report_name)}</code> · 读取环境：${esc((STATUS.readApiBase || "").replace(/^https?:\/\//, ""))} · ${esc(d.currency_info.warning || `币种：${d.currency_info.currency || "未知"}`)} · ${esc(d.completeness_warning)}`;
+      $("rpMeta").innerHTML = `后台名称：<b>${esc(d.admin_name || "未确认")}</b> · 接口名：<code>${esc(d.report_name)}</code> · 读取环境：${esc((STATUS.readApiBase || "").replace(/^https?:\/\//, ""))} · ${esc(d.source_note)} · ${esc(d.currency_info.warning || `币种：${d.currency_info.currency || "未知"}`)} · ${esc(d.completeness_warning)}`;
       $("rpTotal").textContent = money(d.total_gross); $("rpRows").textContent = num(d.rows);
       $("rpVendors").textContent = d.by_vendor.length; $("rpClients").textContent = d.clients.join("、") || "—";
       bars($("rpByDay"), d.by_day.map((x) => ({ label: x.key, value: x.gross })), money);
@@ -382,27 +412,30 @@
     $("rpForm").requestSubmit(); runCompare();
   }
   let cmpData = null;
-  const CMP = { match: ["ok", "一致"], diff: ["warn", "金额不同"], missing_in_report: ["err", "报表缺失"], missing_in_direct: ["idle", "direct 缺失"] };
+  const CMP = { match: ["ok", "一致"], diff: ["warn", "金额不同"], missing_in_report: ["err", "报表缺失"], missing_in_direct: ["idle", "direct 缺失"], outside_report_scope: ["warn", "报表范围待确认"] };
   function renderCompareRows() {
     if (!cmpData) return;
-    const rows = $("cmpAll").checked ? cmpData.rows : cmpData.rows.filter((x) => x.status !== "match");
+    const rows = ($("cmpAll").checked || !cmpData.currency_info.currency) ? cmpData.rows : cmpData.rows.filter((x) => x.status !== "match");
     $("cmpRows").innerHTML = rows.length ? rows.map((x) => `<tr><td class="mono">${x.date}</td><td class="mono" title="${esc(x.campaign_name)}">${x.click_url_id}</td><td>${esc(x.vendor_name)}</td>
-      <td class="num">${money(x.report_gross)}</td><td class="num">${money(x.direct_gross)}</td><td class="num${x.diff < 0 ? " neg" : ""}">${x.diff == null ? "—" : money(x.diff)}</td>
-      <td><span class="pill ${CMP[x.status][0]}">${CMP[x.status][1]}</span></td></tr>`).join("") : empty(7, "没有差异");
+      <td class="num">${money(x.report_gross)}</td><td class="num">${money(x.direct_gross)}</td><td class="num${x.diff > 0 && cmpData.currency_info.currency ? " neg" : ""}">${x.diff == null || !cmpData.currency_info.currency ? "—" : money(-x.diff)}</td>
+      <td>${x.report_rows} / ${x.direct_rows}</td><td><span class="pill ${CMP[x.status][0]}">${!cmpData.currency_info.currency && ["match", "diff"].includes(x.status) ? "币种待核实" : CMP[x.status][1]}</span></td></tr>`).join("") : empty(8, "没有差异");
   }
   async function runCompare() {
-    const btn = $("rpCompare"); btn.disabled = true; $("cmpPanel").hidden = false; $("cmpMeta").textContent = "对账中…";
+    const btn = $("rpCompare"); btn.disabled = true; $("cmpPanel").hidden = false; $("cmpMeta").textContent = "对账中…"; cmpData = null; $("cmpCounts").innerHTML = $("cmpByUrl").innerHTML = $("cmpRows").innerHTML = "";
     try {
-      const r = await mustTool("compare_client_report_with_direct_spend", { report_name: $("rpName").value, start_date: $("rpStart").value, end_date: $("rpEnd").value });
+      const rawScope = $("rpScope").value.trim();
+      const parts = rawScope ? rawScope.split(/[\s,，]+/) : [];
+      if (parts.some((x) => !/^\d+$/.test(x) || !Number.isSafeInteger(Number(x)) || Number(x) <= 0)) throw new Error("额外对照范围只能填写正整数 Click URL ID");
+      const r = await mustTool("compare_client_report_with_direct_spend", { report_name: $("rpName").value, start_date: $("rpStart").value, end_date: $("rpEnd").value, ...(parts.length ? { click_url_ids: parts.map(Number) } : {}) });
       cmpData = r.data; const d = r.data;
       if (!d.counts) { $("cmpCounts").innerHTML = ""; $("cmpByUrl").innerHTML = empty(8, r.summary); $("cmpRows").innerHTML = ""; $("cmpMeta").textContent = ""; return; }
-      $("cmpCounts").innerHTML = Object.entries(d.counts).map(([k, n]) => `<span class="pill ${CMP[k][0]}">${CMP[k][1]} ${n}</span>`).join(" ")
-        + ` <span class="muted" style="font-size:12.5px">报表 gross ${money(d.totals.report_gross)} · direct gross ${money(d.totals.direct_gross)} · 报表缺失部分 ${money(d.totals.missing_in_report_gross)}</span>`;
-      $("cmpByUrl").innerHTML = d.by_click_url.map((b) => { const diff = b.report_gross - b.direct_gross;
-        return `<tr><td class="mono">${b.click_url_id}</td><td>${esc(b.vendor_name)}</td><td>${esc(b.campaign_name)}</td><td class="num">${money(b.report_gross)}</td><td class="num">${money(b.direct_gross)}</td>
-          <td class="num${diff < 0 ? " neg" : ""}">${money(diff)}</td><td class="num">${b.diff_days} 天</td><td>${b.missing_in_report.length ? `<span class="pill err">${b.missing_in_report.length} 天</span> ${esc(b.missing_in_report.map((x) => x.slice(5)).join("、"))}` : "—"}</td></tr>`; }).join("");
+      $("cmpCounts").innerHTML = Object.entries(d.counts).filter(([k]) => d.currency_info.currency || !["match", "diff"].includes(k)).map(([k, n]) => `<span class="pill ${CMP[k][0]}">${CMP[k][1]} ${n}</span>`).join(" ")
+        + (d.currency_info.currency ? ` <span class="muted" style="font-size:12.5px">日报 gross ${money(d.totals.report_gross)} · 后台 gross ${money(d.totals.direct_gross)} · 总差额（后台 − 日报）${d.totals.report_gross == null || d.totals.direct_gross == null ? "—" : money(d.totals.direct_gross - d.totals.report_gross)} · 日报缺记录部分 ${money(d.totals.missing_in_report_gross)} · 后台缺记录部分（后台 − 日报）${money(-d.rows.filter(x => x.status === "missing_in_direct").reduce((s, x) => s + x.report_gross, 0))} · 双方有记录的金额差（后台 − 日报）${money(d.rows.filter(x => x.status === "diff").reduce((s, x) => s - x.diff, 0))} · 容差内差额 ${money(d.rows.filter(x => x.status === "match").reduce((s, x) => s - x.diff, 0))} · 归属待确认部分 ${money(d.totals.outside_report_scope_gross)}</span>` : ' <span class="muted">币种未确认，隐藏差额和金额一致性判断。</span>');
+      $("cmpByUrl").innerHTML = d.by_click_url.map((b) => { const diff = b.report_gross == null || b.direct_gross == null ? null : b.direct_gross - b.report_gross;
+        return `<tr><td class="mono">${b.click_url_id}${b.report_membership === "unconfirmed" ? ' <span class="pill warn">归属待确认</span>' : ""}</td><td>${esc(b.vendor_name)}</td><td>${esc(b.campaign_name)}</td><td class="num">${money(b.report_gross)}</td><td class="num">${money(b.direct_gross)}</td>
+          <td class="num${diff < 0 ? " neg" : ""}">${diff == null || !d.currency_info.currency ? "—" : money(diff)}</td><td class="num">${d.currency_info.currency ? `${b.diff_days} 天` : "—"}</td><td>${b.missing_in_report.length ? `<span class="pill err">${b.missing_in_report.length} 天</span> ${esc(b.missing_in_report.map((x) => x.slice(5)).join("、"))}` : "—"}</td></tr>`; }).join("");
       renderCompareRows();
-      $("cmpMeta").textContent = `${d.start_date} ~ ${d.end_date} · ${d.currency_info.warning || `币种：${d.currency_info.currency || "未知"}`} · ${d.completeness_warning} · ${r.ms} ms`;
+      $("cmpMeta").textContent = `${d.start_date} ~ ${d.end_date} · ${d.scope.warning} · ${d.currency_info.warning || `币种：${d.currency_info.currency || "未知"}`} · ${d.completeness_warning} · ${r.ms} ms`;
     } catch (e) { $("cmpMeta").textContent = e.message; toast("对账失败"); }
     finally { btn.disabled = false; }
   }

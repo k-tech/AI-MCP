@@ -60,3 +60,16 @@ Client overview/comparison API defaults to the previous 14 days ending yesterday
 | 4: usage/console | Implemented and mock tested; console identity is not independently verified and requires stronger authentication before team rollout. |
 
 After identifying the old test host and its callers, rotate the previously exposed test token and retire the old process. Do not treat the historical 19 failed original report calls as independently diagnosed. Daily Report purchase/cohort changes are outside this workflow.
+
+
+## Supplied partner report preview
+
+When a partner has no accessible API, `preview_supplied_spend_report` accepts caller-provided CSV text (header plus up to 1,000 rows), an explicit mapping for date, click URL, currency and net and/or gross columns, and the target `click_url_id` / `spend_date`. It returns matching rows, sums, currency, missing and duplicate warnings and never produces `suggested_create` arguments because the target ledger currency is not confirmed and the create API has no currency field. It does not fetch email, Sheets, files or URLs, verify source completeness, infer a margin, or write spend. CSV is redacted from Tally usage logs. Validate report identity, duplicates, source completeness, currency and destination before approving a write.
+
+The Spend console also supports source-identifier filters (for example LG creative or Vizio campaign and demand tag) with a caller-supplied mapping basis. It checks existing direct spend for the target date and URL before the preview. The caller can provide a sourced, date-bounded gross-margin rule and ledger currency evidence; when the mapping is in date and other inputs are complete, the console previews gross as net / (1 − margin / 100). All such assertions require independent verification; no write arguments are produced. The synthetic tests do not establish either vendor’s actual format or mapping.
+
+After `update_direct_spend` by URL and date, Tally reads back from the write environment and compares the requested net/gross fields when possible. A failed/ambiguous readback is reported as unverified and must be investigated before retrying. ID-only updates or other changed fields cannot be confirmed by that lookup. The console refreshes its existing query only when read and write environments match. The external Admin page may still need a manual refresh.
+
+The client report total is the sum of returned `client_report_spends.gross_spend` rows, not Femini Total Spend including overcap release or excluding client make-good. It cannot by itself establish equality with that different metric. Verify environment, date, scope, adjustments, source currency and completeness before comparison.
+
+Client report comparison defaults to URLs seen in that report in the requested range or prior 30 days, a partial scope. To include separately verified Click URLs, pass `click_url_ids`; URLs not seen in report history are marked `outside_report_scope` with membership unconfirmed, not declared missing from the report. Totals include the selected scope and separate the report-history portion from the outside portion. The caller must determine which URLs and report memberships are appropriate.

@@ -13,12 +13,13 @@ import { getClientReportOverview, compareClientReport } from "./tools/report-ove
 import { getVendorReportOverview, compareVendorReport } from "./tools/vendor-reports.js";
 import type { Source, UsageStore } from "./usage.js";
 import { VERSION } from "./version.js";
+import { previewSuppliedSpendReport } from "./tools/supplied-report.js";
 
 export { VERSION };
 
 export const ALL_TOOLS: ToolDef[] = [
   whoami, getClients,
-  getDirectSpends, getClickUrlHistories, findDirectSpend, createDirectSpend, createDirectSpendFromSources, updateDirectSpend, updateClickUrlPrices,
+  getDirectSpends, getClickUrlHistories, findDirectSpend, previewSuppliedSpendReport, createDirectSpend, createDirectSpendFromSources, updateDirectSpend, updateClickUrlPrices,
   getVendors, getCampaigns, getReportNames, getClientReportSpends, getClientReportOverview, compareClientReport, getVendorReportOverview, compareVendorReport,
   getUsageStats,
   ...RAW_REPORT_TOOLS,
@@ -35,7 +36,8 @@ Entering a direct spend when the user did NOT give amounts — do not ask first,
    - Partner report (Samsung, YouAppi, Kayzen, Jampp, Remerge, Pubmatic, Beeswax, InMobi, Smadex, Liftoff): net = partner net spend for that click URL/day.
    - vendor_managed with a margin: gross = net ÷ (1 − margin/100); "Calculated from net" means the same.
    - A source Tally has no tool for (Google Sheet, partner email, an API not listed): say so and name the job owner (pa_users); do not guess.
-3. Show raw rows → the calculation → the result before writing. Never invent numbers. Check get_direct_spends first so you do not create a duplicate.`;
+3. If the user supplies report CSV, use preview_supplied_spend_report with explicitly identified columns. Review source, currency, rows and amounts. Target ledger currency is unverified: do not generate create arguments or write from these amounts.
+4. Show raw rows → the calculation → the result before writing. Never invent numbers. Check get_direct_spends first so you do not create a duplicate.`;
 
 /** Tools available under this config: write tools only when ENABLE_WRITE=true. */
 export const toolsFor = (cfg: Config) => ALL_TOOLS.filter((t) => cfg.enableWrite || !t.write);

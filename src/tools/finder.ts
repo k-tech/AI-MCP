@@ -156,6 +156,13 @@ export async function findSpend(ctx: ToolContext, clickUrlId: number, day: strin
   } else {
     f.advice = `Tally 能读到的数据源里没有这一天的 spend。${auto}${who}需要人工提供 net 和 gross。`;
   }
+  const externalReport: Record<string, string> = {
+    CreateChimeLgSpendJob: "LG Ads 邮件报表（按 Creative ID 映射）",
+    CreateChimeVizioSpendJob: "Vizio 邮件报表（按 Campaign ID 和 Demand Tag ID 映射）",
+  };
+  if (job && externalReport[job.job] && (f.gross.value === null || f.net.value === null)) {
+    f.advice += ` 已知任务来源：${externalReport[job.job]}；当前未接通自动读取。可由用户提供报表文本进行只读预览，先核对映射、币种及缺失金额。`;
+  }
   return f;
 }
 
