@@ -68,7 +68,7 @@ export const getClientReportOverview = defineTool({
   },
 });
 
-export interface CompareRow { click_url_id: number; campaign_name: string; vendor_name: string; date: string; report_gross: number | null; direct_gross: number | null; direct_net: number | null; diff: number | null; status: "match" | "diff" | "missing_in_report" | "missing_in_direct" | "outside_report_scope" }
+export interface CompareRow { click_url_id: number; campaign_name: string; vendor_name: string; date: string; report_gross: number | null; direct_gross: number | null; direct_net: number | null; diff: number | null; report_rows: number; direct_rows: number; status: "match" | "diff" | "missing_in_report" | "missing_in_direct" | "outside_report_scope" }
 
 export const compareClientReport = defineTool({
   name: "compare_client_report_with_direct_spend", title: "客户报表对账", stage: 3, write: false,
@@ -106,11 +106,12 @@ export const compareClientReport = defineTool({
       }
     }
     const currency_info = currencyInfo([...all, ...scopedDirect]);
+    const repCounts = new Map<string, number>(), directCounts = new Map<string, number>();
     const rep = new Map<string, number>(), meta = new Map<number, { campaign_name: string; vendor_name: string }>();
     for (const r of all) meta.set(Number(r.click_url_id), { campaign_name: r.campaign_name, vendor_name: r.vendor_name });
-    for (const r of inRange) rep.set(`${Number(r.click_url_id)}|${r.spend_date}`, (rep.get(`${Number(r.click_url_id)}|${r.spend_date}`) ?? 0) + (Number(r.gross_spend) || 0));
+    for (const r of inRange) { const key = `${Number(r.click_url_id)}|${r.spend_date}`; rep.set(key, (rep.get(key) ?? 0) + Number(r.gross_spend)); repCounts.set(key, (repCounts.get(key) ?? 0) + 1); }
     const dir = new Map<string, SpendRow & { vendor_name?: string }>();
-    for (const d of scopedDirect) { const key = `${Number(d.click_url_id)}|${d.date}`, prev = dir.get(key); dir.set(key, prev ? { ...d, feedmob_gross_spend: Number(prev.feedmob_gross_spend) + Number(d.feedmob_gross_spend), feedmob_net_spend: Number(prev.feedmob_net_spend) + Number(d.feedmob_net_spend) } : d); if (!meta.has(Number(d.click_url_id))) meta.set(Number(d.click_url_id), { campaign_name: d.campaign_name, vendor_name: d.vendor_name ?? "" }); }
+    for (const d of scopedDirect) { const key = `${Number(d.click_url_id)}|${d.date}`, prev = dir.get(key); directCounts.set(key, (directCounts.get(key) ?? 0) + 1); dir.set(key, prev ? { ...d, feedmob_gross_spend: Number(prev.feedmob_gross_spend) + Number(d.feedmob_gross_spend), feedmob_net_spend: Number(prev.feedmob_net_spend) + Number(d.feedmob_net_spend) } : d); if (!meta.has(Number(d.click_url_id))) meta.set(Number(d.click_url_id), { campaign_name: d.campaign_name, vendor_name: d.vendor_name ?? "" }); }
 
     const rows: CompareRow[] = [];
     for (const id of ids) for (const day of daysBetween(start, end)) {
@@ -118,7 +119,7 @@ export const compareClientReport = defineTool({
       const dg = d ? Number(d.feedmob_gross_spend) || 0 : undefined;
       if (rg === undefined && dg === undefined) continue;           // nothing on either side
       const m = meta.get(id) ?? { campaign_name: "", vendor_name: "" };
-      const base = { click_url_id: id, campaign_name: m.campaign_name, vendor_name: m.vendor_name, date: day };
+      const base = { click_url_id: id, campaign_name: m.campaign_name, vendor_name: m.vendor_name, date: day, report_rows: repCounts.get(k) ?? 0, direct_rows: directCounts.get(k) ?? 0 };
       if (rg === undefined) rows.push({ ...base, report_gross: null, direct_gross: round2(dg!), direct_net: round2(Number(d!.feedmob_net_spend) || 0), diff: null, status: outside.has(id) ? "outside_report_scope" : "missing_in_report" });
       else if (dg === undefined) rows.push({ ...base, report_gross: round2(rg), direct_gross: null, direct_net: null, diff: null, status: "missing_in_direct" });
       else { const diff = round2(rg - dg); rows.push({ ...base, report_gross: round2(rg), direct_gross: round2(dg), direct_net: round2(Number(d!.feedmob_net_spend) || 0), diff, status: Math.abs(diff) <= tolerance ? "match" : "diff" }); }

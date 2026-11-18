@@ -216,6 +216,18 @@
   }));
 
   /* ---- auto-find spend for the create form ---- */
+  $("suppliedForm").addEventListener("submit", async (e) => {
+    e.preventDefault(); $("supSummary").textContent = "检查中…"; $("supOutput").textContent = "";
+    try {
+      const filters = $("supFilters").value.trim();
+      const mapping = filters ? { basis: $("supBasis").value.trim(), filters: JSON.parse(filters) } : undefined;
+      const columns = { date: $("supDay").value.trim(), currency: $("supCurrency").value.trim(), net: $("supNet").value.trim() };
+      if ($("supGross").value.trim()) columns.gross = $("supGross").value.trim();
+      if ($("supId").value.trim()) columns.click_url_id = $("supId").value.trim();
+      const r = await mustTool("preview_supplied_spend_report", { click_url_id: Number($("supUrl").value), spend_date: $("supDate").value, source_name: $("supSource").value, csv_text: $("supCsv").value, columns, ...(mapping ? { mapping } : {}), check_existing: true });
+      $("supSummary").textContent = r.summary; $("supOutput").textContent = JSON.stringify(r.data, null, 2);
+    } catch (err) { $("supSummary").textContent = err.message; }
+  });
   $("spFind").addEventListener("click", async () => {
     const form = $("w-create"), get = (n) => form.querySelector(`[name=${n}]`);
     const id = Number(get("click_url_id").value.trim()), day = get("spend_date").value;
@@ -342,7 +354,9 @@
     } catch (e) { $("rpName").innerHTML = `<option>加载失败：${esc(e.message)}</option>`; }
   }
   $("rpForm").addEventListener("submit", async (e) => {
-    e.preventDefault(); $("rpGo").disabled = true;
+    e.preventDefault();
+    if ($("rpBasis").value === "direct") { $("rpTiles").hidden = $("rpResult").hidden = $("rpCampPanel").hidden = $("rpMeta").hidden = true; await runCompare(); return; }
+    $("rpGo").disabled = true;
     try {
       const r = await mustTool("get_client_report_spends", { report_name: $("rpName").value, start_date: $("rpStart").value, end_date: $("rpEnd").value });
       const d = r.data;
@@ -395,7 +409,7 @@
     const rows = $("cmpAll").checked ? cmpData.rows : cmpData.rows.filter((x) => x.status !== "match");
     $("cmpRows").innerHTML = rows.length ? rows.map((x) => `<tr><td class="mono">${x.date}</td><td class="mono" title="${esc(x.campaign_name)}">${x.click_url_id}</td><td>${esc(x.vendor_name)}</td>
       <td class="num">${money(x.report_gross)}</td><td class="num">${money(x.direct_gross)}</td><td class="num${x.diff < 0 ? " neg" : ""}">${x.diff == null ? "—" : money(x.diff)}</td>
-      <td><span class="pill ${CMP[x.status][0]}">${CMP[x.status][1]}</span></td></tr>`).join("") : empty(7, "没有差异");
+      <td>${x.report_rows} / ${x.direct_rows}</td><td><span class="pill ${CMP[x.status][0]}">${CMP[x.status][1]}</span></td></tr>`).join("") : empty(8, "没有差异");
   }
   async function runCompare() {
     const btn = $("rpCompare"); btn.disabled = true; $("cmpPanel").hidden = false; $("cmpMeta").textContent = "对账中…";
@@ -407,7 +421,7 @@
       cmpData = r.data; const d = r.data;
       if (!d.counts) { $("cmpCounts").innerHTML = ""; $("cmpByUrl").innerHTML = empty(8, r.summary); $("cmpRows").innerHTML = ""; $("cmpMeta").textContent = ""; return; }
       $("cmpCounts").innerHTML = Object.entries(d.counts).map(([k, n]) => `<span class="pill ${CMP[k][0]}">${CMP[k][1]} ${n}</span>`).join(" ")
-        + ` <span class="muted" style="font-size:12.5px">报表 gross ${money(d.totals.report_gross)} · direct gross ${money(d.totals.direct_gross)} · 报表缺失部分 ${money(d.totals.missing_in_report_gross)}</span>`;
+        + ` <span class="muted" style="font-size:12.5px">日报 gross ${money(d.totals.report_gross)} · 后台 gross ${money(d.totals.direct_gross)} · 总差额（后台 − 日报）${d.totals.report_gross == null || d.totals.direct_gross == null ? "—" : money(d.totals.direct_gross - d.totals.report_gross)} · 日报缺记录部分 ${money(d.totals.missing_in_report_gross)} · 双方有记录的金额差（后台 − 日报）${money(d.rows.filter(x => x.status === "diff").reduce((s, x) => s - x.diff, 0))} · 归属待确认部分 ${money(d.totals.outside_report_scope_gross)}</span>`;
       $("cmpByUrl").innerHTML = d.by_click_url.map((b) => { const diff = b.report_gross == null || b.direct_gross == null ? null : b.report_gross - b.direct_gross;
         return `<tr><td class="mono">${b.click_url_id}${b.report_membership === "unconfirmed" ? ' <span class="pill warn">归属待确认</span>' : ""}</td><td>${esc(b.vendor_name)}</td><td>${esc(b.campaign_name)}</td><td class="num">${money(b.report_gross)}</td><td class="num">${money(b.direct_gross)}</td>
           <td class="num${diff < 0 ? " neg" : ""}">${diff == null ? "—" : money(diff)}</td><td class="num">${b.diff_days} 天</td><td>${b.missing_in_report.length ? `<span class="pill err">${b.missing_in_report.length} 天</span> ${esc(b.missing_in_report.map((x) => x.slice(5)).join("、"))}` : "—"}</td></tr>`; }).join("");

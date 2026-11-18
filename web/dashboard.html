@@ -93,6 +93,21 @@
       </div>
 
       <div class="panel">
+        <h2>渠道原始 CSV 只读预览</h2>
+        <p class="notice info">先核实报表来源、日期格式、币种及映射。此处不写入，也不自动推算缺失金额；已有记录不会覆盖。</p>
+        <form class="form-grid" id="suppliedForm">
+          <label>Click URL ID<input id="supUrl" type="number" min="1" required></label><label>日期<input id="supDate" type="date" required></label>
+          <label>来源名称<input id="supSource" required></label><label>日期列表头<input id="supDay" required></label>
+          <label>币种列表头<input id="supCurrency" required></label><label>Net 金额列表头<input id="supNet" required></label>
+          <label>Gross 金额列表头（可选）<input id="supGross"></label><label>Click URL 列表头（可选）<input id="supId"></label>
+          <label class="wide">来源映射依据（无 Click URL 列时必填）<input id="supBasis" placeholder="例如：经核实的 Creative ID 对照及生效日期"></label>
+          <label class="wide">来源筛选条件 JSON（可选，例如 [{"column":"Creative ID","value":"示例"}]）<input id="supFilters"></label>
+          <label class="wide">原始 CSV 内容<textarea id="supCsv" rows="6" required></textarea></label>
+          <button class="primary" type="submit">检查已有 Spend 并预览</button>
+        </form><p id="supSummary" role="status"></p><pre class="code" id="supOutput"></pre>
+      </div>
+
+      <div class="panel">
         <div class="panel-head"><h2>写入</h2><span id="writeState"></span></div>
         <p class="notice" id="writeOff" hidden>写入功能在服务器上没有开启（需要 <code>ENABLE_WRITE=true</code>），下面的表单只能填写和预览，不能提交。</p>
         <div class="tabs" role="tablist">
@@ -186,7 +201,8 @@
             <label for="rpName">客户报表（后台名称 · 接口名）<select id="rpName"><option>加载中…</option></select></label>
             <label for="rpStart">开始日期<input id="rpStart" type="date"></label>
             <label for="rpEnd">结束日期<input id="rpEnd" type="date"></label>
-            <button class="primary" type="submit" id="rpGo">统计</button>
+            <button class="primary" type="submit" id="rpGo">查询所选口径</button>
+            <label for="rpBasis">查询口径<select id="rpBasis"><option value="report">客户日报</option><option value="direct">后台实际 Spend</option></select></label>
             <label for="rpScope">额外对照 Click URL ID（可选，逗号分隔）<input id="rpScope" placeholder="仅填写已核实的 ID"></label>
             <button type="button" id="rpCompare" title="按 click URL、按天比较报表 gross 和 FeedMob direct spend">和 direct spend 对账</button>
           </form>
@@ -207,7 +223,7 @@
           <div class="chips" id="cmpCounts"></div>
           <div class="tbl-wrap"><table><thead><tr><th>Click URL</th><th>渠道</th><th>Campaign</th><th class="num">报表 gross</th><th class="num">direct gross</th><th class="num">差额</th><th class="num">金额不同</th><th>报表缺失的日期</th></tr></thead><tbody id="cmpByUrl"></tbody></table></div>
           <label style="flex-direction:row;display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="cmpAll"> 明细里也显示金额一致的天</label>
-          <div class="tbl-wrap scroll-y"><table><thead><tr><th>日期</th><th>Click URL</th><th>渠道</th><th class="num">报表 gross</th><th class="num">direct gross</th><th class="num">差额（报表 − direct）</th><th>结果</th></tr></thead><tbody id="cmpRows"></tbody></table></div>
+          <div class="tbl-wrap scroll-y"><table><thead><tr><th>日期</th><th>Click URL</th><th>渠道</th><th class="num">报表 gross</th><th class="num">direct gross</th><th class="num">差额（报表 − direct）</th><th>来源行数（日报 / 后台）</th><th>结果</th></tr></thead><tbody id="cmpRows"></tbody></table></div>
         </div>
         <div class="panel" id="rpCampPanel" hidden><h2>按 Campaign</h2>
           <div class="tbl-wrap scroll-y"><table><thead><tr><th>Campaign</th><th class="num">行数</th><th class="num">Gross</th></tr></thead><tbody id="rpByCampaign"></tbody></table></div></div>
