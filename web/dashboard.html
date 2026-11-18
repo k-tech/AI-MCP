@@ -102,6 +102,12 @@
           <label>Gross 金额列表头（可选）<input id="supGross"></label><label>Click URL 列表头（可选）<input id="supId"></label>
           <label class="wide">来源映射依据（无 Click URL 列时必填）<input id="supBasis" placeholder="例如：经核实的 Creative ID 对照及生效日期"></label>
           <label class="wide">来源筛选条件 JSON（可选，例如 [{"column":"Creative ID","value":"示例"}]）<input id="supFilters"></label>
+          <label>选择 CSV 文件<input id="supFile" type="file" accept=".csv,text/csv"></label>
+          <label>映射生效日<input id="supMapStart" type="date"></label><label>映射结束日<input id="supMapEnd" type="date"></label>
+          <label>账本币种（如 USD）<input id="supLedgerCurrency" maxlength="3"></label><label>账本币种依据<input id="supLedgerBasis"></label>
+          <label>已核实 Margin %（gross = net ÷ (1 − margin)）<input id="supMargin" type="number" step="any" max="99.999999"></label>
+          <label>规则币种<input id="supRuleCurrency" maxlength="3"></label><label>规则生效日<input id="supRuleStart" type="date"></label><label>规则结束日<input id="supRuleEnd" type="date"></label>
+          <label class="wide">规则依据<input id="supRuleBasis" placeholder="可核实的规则来源及适用范围"></label>
           <label class="wide">原始 CSV 内容<textarea id="supCsv" rows="6" required></textarea></label>
           <button class="primary" type="submit">检查已有 Spend 并预览</button>
         </form><p id="supSummary" role="status"></p><pre class="code" id="supOutput"></pre>
@@ -221,9 +227,9 @@
         <div class="panel" id="cmpPanel" hidden>
           <div class="panel-head"><h2>和 direct spend 对账</h2><span class="muted" id="cmpMeta" style="font-size:12.5px"></span></div>
           <div class="chips" id="cmpCounts"></div>
-          <div class="tbl-wrap"><table><thead><tr><th>Click URL</th><th>渠道</th><th>Campaign</th><th class="num">报表 gross</th><th class="num">direct gross</th><th class="num">差额</th><th class="num">金额不同</th><th>报表缺失的日期</th></tr></thead><tbody id="cmpByUrl"></tbody></table></div>
+          <div class="tbl-wrap"><table><thead><tr><th>Click URL</th><th>渠道</th><th>Campaign</th><th class="num">报表 gross</th><th class="num">direct gross</th><th class="num">差额（后台 − 日报）</th><th class="num">金额不同</th><th>报表缺失的日期</th></tr></thead><tbody id="cmpByUrl"></tbody></table></div>
           <label style="flex-direction:row;display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="cmpAll"> 明细里也显示金额一致的天</label>
-          <div class="tbl-wrap scroll-y"><table><thead><tr><th>日期</th><th>Click URL</th><th>渠道</th><th class="num">报表 gross</th><th class="num">direct gross</th><th class="num">差额（报表 − direct）</th><th>来源行数（日报 / 后台）</th><th>结果</th></tr></thead><tbody id="cmpRows"></tbody></table></div>
+          <div class="tbl-wrap scroll-y"><table><thead><tr><th>日期</th><th>Click URL</th><th>渠道</th><th class="num">报表 gross</th><th class="num">direct gross</th><th class="num">差额（后台 − 日报）</th><th>来源行数（日报 / 后台）</th><th>结果</th></tr></thead><tbody id="cmpRows"></tbody></table></div>
         </div>
         <div class="panel" id="rpCampPanel" hidden><h2>按 Campaign</h2>
           <div class="tbl-wrap scroll-y"><table><thead><tr><th>Campaign</th><th class="num">行数</th><th class="num">Gross</th></tr></thead><tbody id="rpByCampaign"></tbody></table></div></div>

@@ -37,8 +37,26 @@ test("synthetic LG and Vizio source identifiers filter rows and check existing s
       const r = await invokeTool(previewSuppliedSpendReport, { click_url_id: sample.id, spend_date: "2026-11-05", source_name: "synthetic", csv_text: sample.csv, columns: { date: "day", currency: "ccy", net: "net" }, mapping: { basis: "synthetic mapping", filters: sample.filters }, check_existing: true }, makeContext(cfg, { fetchImpl: api.fetchImpl }));
       assert.equal(r.ok, true); const d = r.data as any;
       assert.equal(d.matched_rows, 1); assert.equal(d.net, 10); assert.equal(d.gross, null); assert.equal(d.suggested_create, null);
-      assert.match(d.warnings.join(" "), existingNet === null ? /未返回已有/ : existingNet === 10 ? /一致/ : /不一致/);
+      assert.match(d.warnings.join(" "), existingNet === null ? /未返回已有/ : /币种未确认/);
       assert.deepEqual(api.seen.map(x => x.method), ["GET"]);
     }
+  }
+});
+
+
+test("synthetic channel previews require effective, sourced mapping, ledger and billing rule; conflicts never pass as matches", async () => {
+  const { fakeApi } = await import("./fake-api.js");
+  for (const sample of [
+    { id: 23203, filter: [{ column: "creative", value: "A" }], csv: "day,creative,ccy,net\n2026-11-05,A,USD,80" },
+    { id: 23505, filter: [{ column: "campaign", value: "B" }, { column: "tag", value: "C" }], csv: "day,campaign,tag,ccy,net\n2026-11-05,B,C,USD,80" },
+  ]) {
+    const api = fakeApi({ "GET /ai/api/direct_spends": () => [200, { data: [{ click_url_id: sample.id, date: "2026-11-05", feedmob_net_spend: 80, feedmob_gross_spend: 101 }] }] });
+    const args = { click_url_id: sample.id, spend_date: "2026-11-05", source_name: "synthetic", csv_text: sample.csv, columns: { date: "day", currency: "ccy", net: "net" }, mapping: { basis: "synthetic mapping", effective_from: "2026-11-01", effective_to: "2026-11-30", filters: sample.filter }, ledger: { currency: "USD", basis: "synthetic ledger evidence" }, billing_rule: { type: "margin_on_gross", margin_percent: 20, currency: "USD", effective_from: "2026-11-01", effective_to: "2026-11-30", basis: "synthetic rule evidence" }, check_existing: true };
+    const invoke = (a: unknown) => invokeTool(previewSuppliedSpendReport, a, makeContext(cfg, { fetchImpl: api.fetchImpl }));
+    const good = (await invoke(args)).data as any; assert.equal(good.net, 80); assert.equal(good.gross, 100); assert.match(good.calculation, /synthetic rule evidence/); assert.match(good.warnings.join(" "), /不一致/); assert.equal(good.suggested_create, null);
+    const missing = (await invoke({ ...args, billing_rule: undefined })).data as any; assert.equal(missing.gross, null); assert.match(missing.warnings.join(" "), /不能判定完全一致/);
+    const expired = (await invoke({ ...args, billing_rule: { ...args.billing_rule, effective_to: "2026-11-04" } })).data as any; assert.equal(expired.gross, null); assert.match(expired.blockers.join(" "), /未覆盖/);
+    const unknown = (await invoke({ ...args, ledger: undefined })).data as any; assert.equal(unknown.gross, null); assert.match(unknown.warnings.join(" "), /不可比较/);
+    assert.ok(api.seen.every(x => x.method === "GET"));
   }
 });
