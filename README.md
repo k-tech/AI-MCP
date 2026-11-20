@@ -18,13 +18,15 @@ node scripts/mock-api.mjs   # optional fake FeedMob API on :4010
 
 # HTTP entry: MCP at /mcp, console at /dashboard/
 set -a; . ./.env; set +a
-MCP_HTTP_TOKEN=<at least 16 chars> PORT=8899 USAGE_DB=data/usage.sqlite node dist/src/http-server.js
+TALLY_AUTH_MODE=local MCP_HTTP_TOKEN=<at least 16 chars> PORT=8899 USAGE_DB=data/usage.sqlite node dist/src/http-server.js
 
 # stdio entry (Claude Desktop / Claude Code running it locally)
 node dist/src/index.js
 ```
 
 Environment variables: `FEEDMOB_API_BASE`, `FEEDMOB_KEY`, `FEEDMOB_SECRET`, `FEEDMOB_USER_EMAIL` (must be @feedmob.com); optional `FEEDMOB_READ_API_BASE` / `FEEDMOB_READ_KEY` / `FEEDMOB_READ_SECRET` to read from a different environment than the one writes go to; `ENABLE_WRITE`, `MCP_HTTP_TOKEN`, `USAGE_DB`, `PORT`.
+
+The HTTP server requires an explicit `TALLY_AUTH_MODE`: `local` permits a self-declared email and shared token for isolated development only; never expose that mode to a team. `google` requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_CALLBACK_URL` (an HTTPS URL ending in `/auth/google/callback`, without query, fragment, or credentials). Configure the exact callback with Google and serve the matching HTTPS origin through a trusted TLS reverse proxy. Team-mode cookies are Secure and requests that change session or console state must originate from that exact origin. Google ID tokens are verified server-side; the verified email and Workspace domain must both be `feedmob.com`. Missing or invalid team configuration prevents startup. No Google application or infrastructure is provisioned by this project. See `docs/stage-4.md` for token migration limitations and deployment checks.
 
 Connecting an agent (Claude Code, Claude Desktop, Codex, OpenCode, Cursor, curl): generate a personal token in the console under "我的 MCP 令牌"; the page shows the exact config for each client.
 
@@ -57,7 +59,7 @@ Client overview/comparison API defaults to the previous 14 days ending yesterday
 | 1: reads | Implemented; historical Staging evidence in `docs/stage-1.md`; automated tests use mocks. |
 | 2: spend and rates | Implemented; historical finder backtest in `docs/stage-2.md`; writes require real Staging integration validation. |
 | 3: reports | Client overview and comparison have historical Staging evidence; Vendor overview/comparison have mock tests only, real partner responses, mappings, currency, timezone and pagination need integration validation. See `docs/stage-3.md`. |
-| 4: usage/console | Implemented and mock tested; console identity is not independently verified and requires stronger authentication before team rollout. |
+| 4: usage/console | Local mode uses self-declared identity; Google team login is mock tested and requires staging validation and legacy-token review before rollout. |
 
 After identifying the old test host and its callers, rotate the previously exposed test token and retire the old process. Do not treat the historical 19 failed original report calls as independently diagnosed. Daily Report purchase/cohort changes are outside this workflow.
 

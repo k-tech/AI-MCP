@@ -1,6 +1,6 @@
 // One HTTP app serving both entry points of the project:
 //   /mcp          Streamable HTTP MCP endpoint (Bearer: personal aimcp_ token ONLY; every call is attributed to a person)
-//   /dashboard/   human console (login with @feedmob.com email + shared access token, cookie session)
+//   /dashboard/   human console (Google team login or isolated local login, cookie session)
 //   /api/*        JSON API used by the console
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -15,6 +15,7 @@ import type { FetchLike } from "../http.js";
 import { createServer as createMcpServer, makeContext, toolsFor, ALL_TOOLS, VERSION } from "../server.js";
 import { invokeTool } from "../tools/registry.js";
 import type { UsageStore } from "../usage.js";
+import { GoogleLogin, type GoogleTransaction } from "./google-auth.js";
 
 const WEB_DIR = fileURLToPath(new URL("../../../web/", import.meta.url));
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -26,13 +27,16 @@ const PUBLIC_ASSETS: Record<string, [string, string]> = {
   "/assets/login.js": ["login.js", "text/javascript; charset=utf-8"],
 };
 
-export interface WebAppOptions { accessToken: string; fetchImpl?: FetchLike; usage?: UsageStore; now?: () => number }
+export interface WebAppOptions { accessToken: string; fetchImpl?: FetchLike; usage?: UsageStore; now?: () => number; googleLogin?: GoogleLogin }
 interface Session { email: string; expires: number }
 
 export function createWebApp(cfg: Config, opts: WebAppOptions): Server {
   const now = opts.now ?? Date.now;
   const startedAt = now();
   const sessions = new Map<string, Session>();
+  const transactions = new Map<string, GoogleTransaction>();
+  const google = opts.googleLogin;
+  const origin = google ? new URL(google.settings.callbackUrl).origin : null;
   const { usage } = opts;
   const available = toolsFor(cfg);
 
@@ -90,9 +94,37 @@ export function createWebApp(cfg: Config, opts: WebAppOptions): Server {
 
       // ---- public pages / assets ----
       if (path in PUBLIC_ASSETS) return file(res, ...PUBLIC_ASSETS[path]);
-      if (path === "/login") return session(req) ? redirect(res, "/dashboard/") : file(res, "login.html", "text/html; charset=utf-8");
+      if (path === "/login") return session(req) ? redirect(res, "/dashboard/") : file(res, google ? "login-team.html" : "login.html", "text/html; charset=utf-8");
+
+      if (google && req.method === "POST" && path !== "/mcp" && req.headers.origin !== origin) return json(res, 403, { error: "请求来源无效" });
+      if (google && path === "/auth/google/start" && req.method === "POST") {
+        for (const [key, value] of transactions) if (value.expires <= now()) transactions.delete(key);
+        const { transaction, url: authUrl } = google.start(now());
+        const id = randomBytes(32).toString("base64url");
+        transactions.set(id, transaction);
+        res.setHeader("Set-Cookie", `aimcp_login=${id}; HttpOnly; Secure; SameSite=Lax; Path=/auth/google/callback; Max-Age=300`);
+        return redirect(res, authUrl);
+      }
+      if (google && path === "/auth/google/callback" && req.method === "GET") {
+        res.setHeader("Referrer-Policy", "no-referrer");
+        res.setHeader("Cache-Control", "no-store");
+        const id = parseCookies(req.headers.cookie).aimcp_login;
+        const tx = id ? transactions.get(id) : undefined;
+        if (id) transactions.delete(id);
+        res.setHeader("Set-Cookie", "aimcp_login=; HttpOnly; Secure; SameSite=Lax; Path=/auth/google/callback; Max-Age=0");
+        if (!tx || tx.expires <= now() || url.searchParams.getAll("state").length !== 1 || url.searchParams.get("state") !== tx.state || url.searchParams.getAll("code").length !== 1 || !url.searchParams.get("code") || url.searchParams.has("error")) return json(res, 403, { error: "登录验证失败，请重新登录" });
+        try {
+          const email = await google.finish(url.searchParams.get("code")!, tx);
+          const sid = randomBytes(32).toString("hex");
+          sessions.set(sid, { email, expires: now() + SESSION_TTL_MS });
+          res.setHeader("Set-Cookie", ["aimcp_login=; HttpOnly; Secure; SameSite=Lax; Path=/auth/google/callback; Max-Age=0", `${COOKIE}=${sid}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`]);
+          res.setHeader("Referrer-Policy", "no-referrer");
+          return redirect(res, "/dashboard/");
+        } catch { return json(res, 403, { error: "登录验证失败，请重新登录" }); }
+      }
 
       if (path === "/api/login" && req.method === "POST") {
+        if (google) return json(res, 403, { error: "团队模式仅支持 Google 登录" });
         const { email = "", token = "" } = (await readJson(req)) as { email?: string; token?: string };
         const mail = String(email).trim().toLowerCase();
         if (!isFeedmobEmail(mail)) return json(res, 403, { error: "只允许 @feedmob.com 邮箱登录" });
@@ -114,7 +146,7 @@ export function createWebApp(cfg: Config, opts: WebAppOptions): Server {
 
       if (path === "/api/logout" && req.method === "POST") {
         const sid = parseCookies(req.headers.cookie)[COOKIE]; if (sid) sessions.delete(sid);
-        res.setHeader("Set-Cookie", `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+        res.setHeader("Set-Cookie", `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${google ? "; Secure" : ""}`);
         return json(res, 200, { ok: true });
       }
       if (path === "/api/me") return json(res, 200, { email: s.email, expiresAt: new Date(s.expires).toISOString() });

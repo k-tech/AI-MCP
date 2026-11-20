@@ -5,7 +5,7 @@
 | 路径 | 用途 | 认证 |
 |---|---|---|
 | `/mcp` | Claude 等 AI 客户端 | Bearer：只认个人令牌 `aimcp_…`（共享令牌不能连 MCP） |
-| `/dashboard/` | 人用的控制台 | @feedmob.com 邮箱 + 共享访问令牌（仅用于登录），会话 12 小时（之后改 Google 登录） |
+| `/dashboard/` | 人用的控制台 | 团队模式为 Google Workspace 登录；本地模式为自报邮箱 + 共享令牌，仅供隔离开发；会话 12 小时 |
 | `/api/*` | 控制台的 JSON 接口 | 登录会话 |
 
 控制台和 Claude 调用的是同一套工具定义（`src/tools/*`），经过同一个 `invokeTool`（参数校验 + 使用记录）。
@@ -15,5 +15,7 @@
 
 ## 启动
     set -a; . ./.env; set +a
-    MCP_HTTP_TOKEN=<共享访问令牌> PORT=8899 USAGE_DB=data/usage.sqlite node dist/src/http-server.js
+    TALLY_AUTH_MODE=local MCP_HTTP_TOKEN=<共享访问令牌> PORT=8899 USAGE_DB=data/usage.sqlite node dist/src/http-server.js
     # 开启写入：再加 ENABLE_WRITE=true
+
+团队模式所需 Google 配置和上线前限制见 `docs/stage-4.md`。
