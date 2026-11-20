@@ -5,20 +5,29 @@ import { defineTool } from "./registry.js";
 import { date, round2 } from "./schemas.js";
 import { validAmount, completeRows, validateRows } from "./report-safety.js";
 
+function reportDay(value: string, format: "iso" | "mm/dd/yyyy hh:mm"): string | null {
+  if (format === "iso") return z.string().date().safeParse(value).success ? value : null;
+  const match = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})$/.exec(value);
+  if (!match || Number(match[4]) > 23 || Number(match[5]) > 59) return null;
+  const day = `${match[3]}-${match[1]}-${match[2]}`;
+  return z.string().date().safeParse(day).success ? day : null;
+}
+
 export const previewSuppliedSpendReport = defineTool({
   name: "preview_supplied_spend_report", title: "预览自带报表", stage: 2, write: false,
-  description: "Preview caller-supplied CSV for one click URL and date. Explicit column mapping and currency are required. Never fetches files or URLs and never writes. Review the source, matched rows, currency and amounts; It does not generate create arguments until the target ledger currency can be established. No rate or margin is guessed.",
+  description: "Preview caller-supplied CSV for one click URL and date. Select the date format explicitly; ISO is the default. If no currency column exists, source amounts are shown with unknown currency and cannot be compared or used for rule calculations. Never fetches files or URLs, writes, or generates write arguments. No rate or margin is guessed.",
   schema: {
     click_url_id: z.coerce.number().int().positive(), spend_date: date("Spend 日期"),
     source_name: z.string().trim().min(1).max(120).describe("Human-readable source, not a URL to fetch"),
     csv_text: z.string().min(1).max(100_000).describe("CSV text including header"),
-    columns: z.object({ date: z.string().min(1), click_url_id: z.string().min(1).optional(), currency: z.string().min(1), net: z.string().min(1).optional(), gross: z.string().min(1).optional() }).strict(),
+    columns: z.object({ date: z.string().min(1), click_url_id: z.string().min(1).optional(), currency: z.string().min(1).optional(), net: z.string().min(1).optional(), gross: z.string().min(1).optional() }).strict(),
+    date_format: z.enum(["iso", "mm/dd/yyyy hh:mm"]).optional().describe("Source date format; default iso. No timezone conversion is performed."),
     mapping: z.object({ basis: z.string().trim().min(1), effective_from: date().optional(), effective_to: date().optional(), filters: z.array(z.union([z.object({ column: z.string().min(1), value: z.string().min(1) }).strict(), z.object({ column: z.string().min(1), values: z.array(z.string().min(1)).min(1).max(100) }).strict()])).min(1).max(4) }).strict().optional().describe("Explicit source identifiers mapped to this URL; each filter uses value or values (alternatives); different columns intersect. Basis must be independently verified"),
     ledger: z.object({ currency: z.string().regex(/^[A-Za-z]{3}$/), basis: z.string().trim().min(1) }).strict().optional(),
     billing_rule: z.object({ type: z.literal("margin_on_gross"), margin_percent: z.number().finite().lt(100), currency: z.string().regex(/^[A-Za-z]{3}$/), effective_from: date(), effective_to: date(), basis: z.string().trim().min(1) }).strict().optional(),
     check_existing: z.boolean().optional().describe("Check the target date and URL in direct spend before previewing"),
   },
-  async run({ click_url_id, spend_date, source_name, csv_text, columns, mapping, ledger, billing_rule, check_existing }, ctx) {
+  async run({ click_url_id, spend_date, source_name, csv_text, columns, date_format, mapping, ledger, billing_rule, check_existing }, ctx) {
     if (!columns.click_url_id && !mapping) throw new Error("请提供 Click URL 列或经核实的来源映射");
     if (mapping && !check_existing) throw new Error("渠道原始报表预览必须先检查已有 Spend");
     let existing: Record<string, unknown>[] | null = null;
@@ -39,13 +48,13 @@ export const previewSuppliedSpendReport = defineTool({
     const index = (name: string) => header.indexOf(name);
     const rows = records.slice(1), selected: string[][] = [];
     for (const [i, row] of rows.entries()) {
-      const day = row[index(columns.date)], id = columns.click_url_id ? row[index(columns.click_url_id)] : null;
-      if (!z.string().date().safeParse(day).success || (id !== null && (!/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)) || Number(id) <= 0))) throw new Error(`CSV 第 ${i + 2} 行日期或 Click URL ID 无效，无法确认筛选范围`);
+      const day = reportDay(row[index(columns.date)], date_format ?? "iso"), id = columns.click_url_id ? row[index(columns.click_url_id)] : null;
+      if (day === null || (id !== null && (!/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)) || Number(id) <= 0))) throw new Error(`CSV 第 ${i + 2} 行日期或 Click URL ID 无效，无法确认筛选范围`);
       if (day === spend_date && (id === null || Number(id) === click_url_id) && (!mapping || mapping.filters.every(f => "value" in f ? row[index(f.column)] === f.value : f.values.includes(row[index(f.column)])))) selected.push(row);
     }
-    if (!selected.length) return { summary: "没有匹配日期和 Click URL 的行，未生成录入金额", data: { source_name, click_url_id, spend_date, matched_rows: 0, total_rows: rows.length } };
-    const currencies = new Set(selected.map((r) => r[index(columns.currency)].toUpperCase()));
-    if (currencies.size !== 1 || !/^[A-Z]{3}$/.test([...currencies][0])) throw new Error("匹配行币种缺失、无效或不一致，停止预览");
+    if (!selected.length) return { summary: `没有匹配日期和 Click URL 的行，未生成录入金额${columns.currency ? "" : "；报表币种未知，已有金额不可比较"}`, data: { source_name, click_url_id, spend_date, matched_rows: 0, total_rows: rows.length, existing, suggested_create: null } };
+    const currencies = columns.currency ? new Set(selected.map((r) => r[index(columns.currency!)].toUpperCase())) : null;
+    if (currencies && (currencies.size !== 1 || !/^[A-Z]{3}$/.test([...currencies][0]))) throw new Error("匹配行币种缺失、无效或不一致，停止预览");
     const total = (column?: string) => {
       if (!column) return null;
       const values = selected.map((r) => r[index(column)]);
@@ -54,9 +63,10 @@ export const previewSuppliedSpendReport = defineTool({
       return round2(values.reduce((sum, v) => sum + Number(v), 0));
     };
     const net = total(columns.net), sourceGross = total(columns.gross);
-    const currency = [...currencies][0];
+    const currency = currencies ? [...currencies][0] : null;
     let gross = sourceGross, calculation: string | null = null;
     const blockers: string[] = [];
+    if (!currency) blockers.push("报表币种未知，源金额不可与已有金额比较或用于计费规则计算");
     if (!ledger || ledger.currency.toUpperCase() !== currency) blockers.push("目标账本币种及依据缺失或与报表币种不一致");
     if (!mapping && !columns.click_url_id) blockers.push("缺少 URL 映射");
     if (mapping && (!mapping.effective_from || !mapping.effective_to || mapping.effective_from > mapping.effective_to || spend_date < mapping.effective_from || spend_date > mapping.effective_to)) blockers.push("来源映射有效期未覆盖目标日期");
@@ -82,7 +92,7 @@ export const previewSuppliedSpendReport = defineTool({
     if (blockers.length) warnings.push(`无法计算或比较录入预览：${blockers.join("；")}。`);
     if (existing === null) warnings.push("尚未查询已有 Spend，不能录入。");
     else if (existing.length) {
-      if (!ledger || ledger.currency.toUpperCase() !== currency || existing.some(r => r.currency != null && String(r.currency).toUpperCase() !== currency)) warnings.push("目标账本或已有记录币种未确认或不一致，已有金额不可比较，不要覆盖。");
+      if (!currency || !ledger || ledger.currency.toUpperCase() !== currency || existing.some(r => r.currency != null && String(r.currency).toUpperCase() !== currency)) warnings.push("报表、目标账本或已有记录币种未确认或不一致，已有金额不可比较，不要覆盖。");
       else if (existing.length > 1) warnings.push("已有多条 Spend，需人工核查，不能判定一致或覆盖。");
       else if (blockers.length) warnings.push("来源映射、计费依据或金额待核实，已有金额不能判定一致，不要覆盖。");
       else {
@@ -94,6 +104,6 @@ export const previewSuppliedSpendReport = defineTool({
     } else warnings.push("目标日期和 URL 未返回已有 Spend；上游完整性仍需核实。");
     warnings.push("只读预览；账本币种、映射及计费依据由调用者提供，必须独立核实；不生成写入参数。");
     const suggested_create = null;
-    return { summary: `匹配 ${selected.length} 行；币种 ${[...currencies][0]}；${warnings.join(" ")}`, data: { source_name, click_url_id, spend_date, currency: [...currencies][0], matched_rows: selected.length, total_rows: rows.length, duplicate_rows, net, gross, calculation, blockers, ledger_basis: ledger?.basis ?? null, existing, mapping_basis: mapping?.basis ?? null, warnings, detail: selected.map(r => ({ date: r[index(columns.date)], click_url_id, currency: r[index(columns.currency)], net: columns.net ? r[index(columns.net)] : null, gross: columns.gross ? r[index(columns.gross)] : null })), suggested_create } };
+    return { summary: `匹配 ${selected.length} 行；币种 ${currency ?? "未知"}；${warnings.join(" ")}`, data: { source_name, click_url_id, spend_date, currency, matched_rows: selected.length, total_rows: rows.length, duplicate_rows, net, gross, calculation, blockers, ledger_basis: ledger?.basis ?? null, existing, mapping_basis: mapping?.basis ?? null, warnings, detail: selected.map(r => ({ date: r[index(columns.date)], click_url_id, currency: columns.currency ? r[index(columns.currency)] : null, net: columns.net ? r[index(columns.net)] : null, gross: columns.gross ? r[index(columns.gross)] : null })), suggested_create } };
   },
 });

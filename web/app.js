@@ -230,10 +230,11 @@
       const rulePresent = ["supMargin", "supRuleCurrency", "supRuleStart", "supRuleEnd", "supRuleBasis"].some(id => $(id).value.trim());
       if (rulePresent && ["supMargin", "supRuleCurrency", "supRuleStart", "supRuleEnd", "supRuleBasis"].some(id => !$(id).value.trim())) throw new Error("计费规则字段不完整：请填写 margin、币种、生效起止日和依据");
       const billing_rule = rulePresent ? { type: "margin_on_gross", margin_percent: Number($("supMargin").value), currency: $("supRuleCurrency").value.trim(), effective_from: $("supRuleStart").value, effective_to: $("supRuleEnd").value, basis: $("supRuleBasis").value.trim() } : undefined;
-      const columns = { date: $("supDay").value.trim(), currency: $("supCurrency").value.trim(), net: $("supNet").value.trim() };
+      const columns = { date: $("supDay").value.trim(), net: $("supNet").value.trim() };
+      if ($("supCurrency").value.trim()) columns.currency = $("supCurrency").value.trim();
       if ($("supGross").value.trim()) columns.gross = $("supGross").value.trim();
       if ($("supId").value.trim()) columns.click_url_id = $("supId").value.trim();
-      const r = await mustTool("preview_supplied_spend_report", { click_url_id: Number($("supUrl").value), spend_date: $("supDate").value, source_name: $("supSource").value, csv_text: $("supCsv").value, columns, ...(mapping ? { mapping } : {}), ...(ledger ? { ledger } : {}), ...(billing_rule ? { billing_rule } : {}), check_existing: true });
+      const r = await mustTool("preview_supplied_spend_report", { click_url_id: Number($("supUrl").value), spend_date: $("supDate").value, source_name: $("supSource").value, csv_text: $("supCsv").value, columns, date_format: $("supDateFormat").value, ...(mapping ? { mapping } : {}), ...(ledger ? { ledger } : {}), ...(billing_rule ? { billing_rule } : {}), check_existing: true });
       $("supSummary").textContent = r.summary; $("supOutput").textContent = JSON.stringify(r.data, null, 2);
     } catch (err) { $("supSummary").textContent = err.message; }
   });
