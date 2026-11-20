@@ -13,7 +13,7 @@ export const previewSuppliedSpendReport = defineTool({
     source_name: z.string().trim().min(1).max(120).describe("Human-readable source, not a URL to fetch"),
     csv_text: z.string().min(1).max(100_000).describe("CSV text including header"),
     columns: z.object({ date: z.string().min(1), click_url_id: z.string().min(1).optional(), currency: z.string().min(1), net: z.string().min(1).optional(), gross: z.string().min(1).optional() }).strict(),
-    mapping: z.object({ basis: z.string().trim().min(1), effective_from: date().optional(), effective_to: date().optional(), filters: z.array(z.object({ column: z.string().min(1), value: z.string().min(1) }).strict()).min(1).max(4) }).strict().optional().describe("Explicit source identifiers mapped to this URL; basis must be independently verified"),
+    mapping: z.object({ basis: z.string().trim().min(1), effective_from: date().optional(), effective_to: date().optional(), filters: z.array(z.union([z.object({ column: z.string().min(1), value: z.string().min(1) }).strict(), z.object({ column: z.string().min(1), values: z.array(z.string().min(1)).min(1).max(100) }).strict()])).min(1).max(4) }).strict().optional().describe("Explicit source identifiers mapped to this URL; each filter uses value or values (alternatives); different columns intersect. Basis must be independently verified"),
     ledger: z.object({ currency: z.string().regex(/^[A-Za-z]{3}$/), basis: z.string().trim().min(1) }).strict().optional(),
     billing_rule: z.object({ type: z.literal("margin_on_gross"), margin_percent: z.number().finite().lt(100), currency: z.string().regex(/^[A-Za-z]{3}$/), effective_from: date(), effective_to: date(), basis: z.string().trim().min(1) }).strict().optional(),
     check_existing: z.boolean().optional().describe("Check the target date and URL in direct spend before previewing"),
@@ -41,7 +41,7 @@ export const previewSuppliedSpendReport = defineTool({
     for (const [i, row] of rows.entries()) {
       const day = row[index(columns.date)], id = columns.click_url_id ? row[index(columns.click_url_id)] : null;
       if (!z.string().date().safeParse(day).success || (id !== null && (!/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)) || Number(id) <= 0))) throw new Error(`CSV 第 ${i + 2} 行日期或 Click URL ID 无效，无法确认筛选范围`);
-      if (day === spend_date && (id === null || Number(id) === click_url_id) && (!mapping || mapping.filters.every(f => row[index(f.column)] === f.value))) selected.push(row);
+      if (day === spend_date && (id === null || Number(id) === click_url_id) && (!mapping || mapping.filters.every(f => "value" in f ? row[index(f.column)] === f.value : f.values.includes(row[index(f.column)])))) selected.push(row);
     }
     if (!selected.length) return { summary: "没有匹配日期和 Click URL 的行，未生成录入金额", data: { source_name, click_url_id, spend_date, matched_rows: 0, total_rows: rows.length } };
     const currencies = new Set(selected.map((r) => r[index(columns.currency)].toUpperCase()));

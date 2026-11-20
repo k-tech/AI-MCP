@@ -13,7 +13,7 @@ const api = fakeApi({ "GET /ai/api/clients": (u) => {
   const q = u.searchParams.get("client_name")?.toLowerCase() ?? "";
   return [200, [{ id: 1, name: "Uber Technologies" }, { id: 2, name: "Lyft" }].filter((c) => c.name.toLowerCase().includes(q))];
 }, "GET /ai/api/samsung_reports": () => [200, [{ date: "2026-11-01", partner_net_spend: 5, click_url_id: 1, samsung_content_id: "A" }]],
-  "GET /ai/api/direct_spends": () => [200, [{ click_url_id: 1, date: "2026-11-01", feedmob_net_spend: 5 }]]
+  "GET /ai/api/direct_spends": () => [200, [{ click_url_id: 1, date: "2026-11-01", feedmob_net_spend: 5, feedmob_gross_spend: 5 }]]
 });
 const usage = new UsageStore();
 let server: Server, base = "";
@@ -95,6 +95,15 @@ test("web: vendor reconciliation uses the audited tool route", async () => {
   assert.equal(calls[0].caller, "vendor@feedmob.com"); assert.equal(calls[0].tool, "compare_vendor_report_with_direct_spend");
 });
 
+test("web: supplied report console route accepts multi-value filters", async () => {
+  const cookie = await login();
+  const page = await (await fetch(base + "/dashboard/", { headers: { cookie } })).text();
+  assert.match(page, /values/);
+  const args = { click_url_id: 23505, spend_date: "2026-11-05", source_name: "synthetic", csv_text: "day,campaign,tag,ccy,net\n2026-11-05,A,T1,USD,10\n2026-11-05,A,T2,USD,20\n2026-11-05,A,T3,USD,50", columns: { date: "day", currency: "ccy", net: "net" }, mapping: { basis: "synthetic", filters: [{ column: "campaign", value: "A" }, { column: "tag", values: ["T1", "T2"] }] }, check_existing: true };
+  const r = await (await post("/api/tools/call", { name: "preview_supplied_spend_report", arguments: args }, cookie)).json();
+  assert.equal(r.ok, true, r.summary); assert.equal(r.data.matched_rows, 2); assert.equal(r.data.net, 30); assert.equal(r.data.suggested_create, null);
+});
+
 test("web: logout ends the session", async () => {
   const cookie = await login();
   await post("/api/logout", {}, cookie);
@@ -111,6 +120,9 @@ test("any standard MCP client can connect over Streamable HTTP with a personal t
   await client.connect(transport);                       // initialize + initialized notification
   const { tools } = await client.listTools();
   assert.ok(tools.length >= 49 && tools.every((t) => t.inputSchema.type === "object"));
+  assert.match(JSON.stringify(tools.find(t => t.name === "preview_supplied_spend_report")?.inputSchema), /values/);
+  const preview: any = await client.callTool({ name: "preview_supplied_spend_report", arguments: { click_url_id: 23505, spend_date: "2026-11-05", source_name: "synthetic", csv_text: "day,tag,ccy,net\n2026-11-05,T1,USD,10\n2026-11-05,T2,USD,20", columns: { date: "day", currency: "ccy", net: "net" }, mapping: { basis: "synthetic", filters: [{ column: "tag", values: ["T1", "T2"] }] }, check_existing: true } });
+  assert.notEqual(preview.isError, true); assert.match(preview.content[0].text, /匹配 2 行/);
   const r: any = await client.callTool({ name: "whoami", arguments: {} });
   assert.match(r.content[0].text, /amy@feedmob\.com/);
   await client.close();
