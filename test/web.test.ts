@@ -113,6 +113,15 @@ test("web: Vizio-shaped preview route accepts explicit date format and no curren
   assert.equal(r.ok, true, r.summary); assert.equal(r.data.net, 11); assert.equal(r.data.currency, null); assert.equal(r.data.existing.length, 1); assert.equal(r.data.suggested_create, null); assert.match(r.summary, /币种 未知/);
 });
 
+test("web: source currency evidence passes through console route", async () => {
+  const cookie = await login();
+  const page = await (await fetch(base + "/dashboard/", { headers: { cookie } })).text();
+  assert.match(page, /id="supSourceCurrency"/); assert.match(page, /id="supSourceCurrencyBasis"/); assert.match(page, /id="supNoCurrencyColumn"/);
+  const args = { click_url_id: 1, spend_date: "2026-11-01", source_name: "synthetic", csv_text: "day,url,net\n2026-11-01,1,5", columns: { date: "day", click_url_id: "url", net: "net" }, source_currency: { currency: "USD", basis: "synthetic report proof", no_currency_column: true }, ledger: { currency: "USD", basis: "synthetic ledger" }, billing_rule: { type: "margin_on_gross", margin_percent: 0, currency: "USD", effective_from: "2026-11-01", effective_to: "2026-11-01", basis: "synthetic rule" }, check_existing: true };
+  const r = await (await post("/api/tools/call", { name: "preview_supplied_spend_report", arguments: args }, cookie)).json();
+  assert.equal(r.ok, true, r.summary); assert.equal(r.data.currency, "USD"); assert.equal(r.data.gross, 5); assert.equal(r.data.source_currency_basis, "synthetic report proof"); assert.equal(r.data.suggested_create, null);
+});
+
 test("web: logout ends the session", async () => {
   const cookie = await login();
   await post("/api/logout", {}, cookie);
@@ -134,6 +143,8 @@ test("any standard MCP client can connect over Streamable HTTP with a personal t
   assert.notEqual(preview.isError, true); assert.match(preview.content[0].text, /匹配 2 行/);
   const unknown: any = await client.callTool({ name: "preview_supplied_spend_report", arguments: { click_url_id: 1, spend_date: "2026-11-01", source_name: "synthetic", date_format: "mm/dd/yyyy hh:mm", csv_text: "day,url,net\n11/01/2026 00:00,1,5", columns: { date: "day", click_url_id: "url", net: "net" }, check_existing: true } });
   assert.notEqual(unknown.isError, true); assert.match(unknown.content[0].text, /币种 未知/);
+  const evidenced: any = await client.callTool({ name: "preview_supplied_spend_report", arguments: { click_url_id: 1, spend_date: "2026-11-01", source_name: "synthetic", csv_text: "day,url,net\n2026-11-01,1,5", columns: { date: "day", click_url_id: "url", net: "net" }, source_currency: { currency: "USD", basis: "synthetic report proof", no_currency_column: true }, check_existing: true } });
+  assert.notEqual(evidenced.isError, true); assert.match(evidenced.content[0].text, /synthetic report proof/);
   const r: any = await client.callTool({ name: "whoami", arguments: {} });
   assert.match(r.content[0].text, /amy@feedmob\.com/);
   await client.close();

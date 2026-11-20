@@ -15,21 +15,23 @@ function reportDay(value: string, format: "iso" | "mm/dd/yyyy hh:mm"): string | 
 
 export const previewSuppliedSpendReport = defineTool({
   name: "preview_supplied_spend_report", title: "预览自带报表", stage: 2, write: false,
-  description: "Preview caller-supplied CSV for one click URL and date. Select the date format explicitly; ISO is the default. If no currency column exists, source amounts are shown with unknown currency and cannot be compared or used for rule calculations. Never fetches files or URLs, writes, or generates write arguments. No rate or margin is guessed.",
+  description: "Preview caller-supplied CSV for one click URL and date. ISO dates are the default. If the report has no currency column, source_currency may provide a caller-verified currency and independent source evidence; never substitute ledger or billing currency. Assertions require independent verification. Never fetches files or URLs, writes, or generates write arguments. No rate or margin is guessed.",
   schema: {
     click_url_id: z.coerce.number().int().positive(), spend_date: date("Spend 日期"),
     source_name: z.string().trim().min(1).max(120).describe("Human-readable source, not a URL to fetch"),
     csv_text: z.string().min(1).max(100_000).describe("CSV text including header"),
     columns: z.object({ date: z.string().min(1), click_url_id: z.string().min(1).optional(), currency: z.string().min(1).optional(), net: z.string().min(1).optional(), gross: z.string().min(1).optional() }).strict(),
+    source_currency: z.object({ currency: z.string().regex(/^[A-Za-z]{3}$/), basis: z.string().trim().min(1).max(1000), no_currency_column: z.literal(true) }).strict().optional().describe("Only when the report has no currency column: caller asserts this and supplies independently verifiable report currency evidence, not ledger or billing evidence. Cannot be combined with columns.currency."),
     date_format: z.enum(["iso", "mm/dd/yyyy hh:mm"]).optional().describe("Source date format; default iso. No timezone conversion is performed."),
     mapping: z.object({ basis: z.string().trim().min(1), effective_from: date().optional(), effective_to: date().optional(), filters: z.array(z.union([z.object({ column: z.string().min(1), value: z.string().min(1) }).strict(), z.object({ column: z.string().min(1), values: z.array(z.string().min(1)).min(1).max(100) }).strict()])).min(1).max(4) }).strict().optional().describe("Explicit source identifiers mapped to this URL; each filter uses value or values (alternatives); different columns intersect. Basis must be independently verified"),
     ledger: z.object({ currency: z.string().regex(/^[A-Za-z]{3}$/), basis: z.string().trim().min(1) }).strict().optional(),
     billing_rule: z.object({ type: z.literal("margin_on_gross"), margin_percent: z.number().finite().lt(100), currency: z.string().regex(/^[A-Za-z]{3}$/), effective_from: date(), effective_to: date(), basis: z.string().trim().min(1) }).strict().optional(),
     check_existing: z.boolean().optional().describe("Check the target date and URL in direct spend before previewing"),
   },
-  async run({ click_url_id, spend_date, source_name, csv_text, columns, date_format, mapping, ledger, billing_rule, check_existing }, ctx) {
+  async run({ click_url_id, spend_date, source_name, csv_text, columns, source_currency, date_format, mapping, ledger, billing_rule, check_existing }, ctx) {
     if (!columns.click_url_id && !mapping) throw new Error("请提供 Click URL 列或经核实的来源映射");
     if (mapping && !check_existing) throw new Error("渠道原始报表预览必须先检查已有 Spend");
+    if (columns.currency && source_currency) throw new Error("报表币种列与外部报表币种依据不能同时使用；请核实原报表");
     let existing: Record<string, unknown>[] | null = null;
     if (check_existing) {
       existing = completeRows<Record<string, unknown>>(await ctx.api.get("/ai/api/direct_spends", { start_date: spend_date, end_date: spend_date, "click_url_ids[]": [click_url_id] }), "direct spend");
@@ -52,7 +54,7 @@ export const previewSuppliedSpendReport = defineTool({
       if (day === null || (id !== null && (!/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)) || Number(id) <= 0))) throw new Error(`CSV 第 ${i + 2} 行日期或 Click URL ID 无效，无法确认筛选范围`);
       if (day === spend_date && (id === null || Number(id) === click_url_id) && (!mapping || mapping.filters.every(f => "value" in f ? row[index(f.column)] === f.value : f.values.includes(row[index(f.column)])))) selected.push(row);
     }
-    if (!selected.length) return { summary: `没有匹配日期和 Click URL 的行，未生成录入金额${columns.currency ? "" : "；报表币种未知，已有金额不可比较"}`, data: { source_name, click_url_id, spend_date, matched_rows: 0, total_rows: rows.length, existing, suggested_create: null } };
+    if (!selected.length) return { summary: `没有匹配日期和 Click URL 的行，未生成录入金额${!columns.currency && !source_currency ? "；报表币种未知，已有金额不可比较" : ""}`, data: { source_name, click_url_id, spend_date, matched_rows: 0, total_rows: rows.length, existing, source_currency_basis: source_currency?.basis ?? null, suggested_create: null } };
     const currencies = columns.currency ? new Set(selected.map((r) => r[index(columns.currency!)].toUpperCase())) : null;
     if (currencies && (currencies.size !== 1 || !/^[A-Z]{3}$/.test([...currencies][0]))) throw new Error("匹配行币种缺失、无效或不一致，停止预览");
     const total = (column?: string) => {
@@ -63,7 +65,7 @@ export const previewSuppliedSpendReport = defineTool({
       return round2(values.reduce((sum, v) => sum + Number(v), 0));
     };
     const net = total(columns.net), sourceGross = total(columns.gross);
-    const currency = currencies ? [...currencies][0] : null;
+    const currency = currencies ? [...currencies][0] : source_currency?.currency.toUpperCase() ?? null;
     let gross = sourceGross, calculation: string | null = null;
     const blockers: string[] = [];
     if (!currency) blockers.push("报表币种未知，源金额不可与已有金额比较或用于计费规则计算");
@@ -88,6 +90,7 @@ export const previewSuppliedSpendReport = defineTool({
     }
     const warnings = ["来源由调用者提供，无法验证完整性、口径或重复；请核对原报表与写入环境。", ...(duplicate_rows ? [`存在 ${duplicate_rows} 行完全重复，请核实后重新预览。`] : []), ...((net === null || gross === null) ? ["net 或 gross 缺失；需提供覆盖目标日的计费规则和币种依据。"] : [])];
     if (mapping) warnings.push(`映射依据由调用者提供：${mapping.basis}；必须独立核实映射和生效日期。`);
+    if (source_currency) warnings.push(`报表无币种列及报表币种 ${currency} 由调用者声明，依据：${source_currency.basis}；必须独立核实来源和适用范围。`);
     if (calculation) warnings.push(calculation);
     if (blockers.length) warnings.push(`无法计算或比较录入预览：${blockers.join("；")}。`);
     if (existing === null) warnings.push("尚未查询已有 Spend，不能录入。");
@@ -104,6 +107,6 @@ export const previewSuppliedSpendReport = defineTool({
     } else warnings.push("目标日期和 URL 未返回已有 Spend；上游完整性仍需核实。");
     warnings.push("只读预览；账本币种、映射及计费依据由调用者提供，必须独立核实；不生成写入参数。");
     const suggested_create = null;
-    return { summary: `匹配 ${selected.length} 行；币种 ${currency ?? "未知"}；${warnings.join(" ")}`, data: { source_name, click_url_id, spend_date, currency, matched_rows: selected.length, total_rows: rows.length, duplicate_rows, net, gross, calculation, blockers, ledger_basis: ledger?.basis ?? null, existing, mapping_basis: mapping?.basis ?? null, warnings, detail: selected.map(r => ({ date: r[index(columns.date)], click_url_id, currency: columns.currency ? r[index(columns.currency)] : null, net: columns.net ? r[index(columns.net)] : null, gross: columns.gross ? r[index(columns.gross)] : null })), suggested_create } };
+    return { summary: `匹配 ${selected.length} 行；币种 ${currency ?? "未知"}；${warnings.join(" ")}`, data: { source_name, click_url_id, spend_date, currency, currency_source: columns.currency ? "report_column" : source_currency ? "caller_evidence" : "unknown", source_currency_basis: source_currency?.basis ?? null, matched_rows: selected.length, total_rows: rows.length, duplicate_rows, net, gross, calculation, blockers, ledger_basis: ledger?.basis ?? null, billing_rule_basis: billing_rule?.basis ?? null, existing, mapping_basis: mapping?.basis ?? null, warnings, detail: selected.map(r => ({ date: r[index(columns.date)], click_url_id, currency: columns.currency ? r[index(columns.currency)] : null, net: columns.net ? r[index(columns.net)] : null, gross: columns.gross ? r[index(columns.gross)] : null })), suggested_create } };
   },
 });

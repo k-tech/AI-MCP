@@ -94,12 +94,14 @@
 
       <div class="panel">
         <h2>渠道原始 CSV 只读预览</h2>
-        <p class="notice info">先核实报表来源、日期格式、币种及映射。此处不写入，也不自动推算缺失金额；已有记录不会覆盖。</p>
+        <p class="notice info">先核实报表来源、日期格式、币种及映射。仅凭完整依据预览规则计算；此处不写入，也不会覆盖已有记录。</p>
         <form class="form-grid" id="suppliedForm">
           <label>Click URL ID<input id="supUrl" type="number" min="1" required></label><label>日期<input id="supDate" type="date" required></label>
           <label>来源名称<input id="supSource" required></label><label>日期列表头<input id="supDay" required></label>
           <label>报表日期格式<select id="supDateFormat"><option value="iso">YYYY-MM-DD</option><option value="mm/dd/yyyy hh:mm">MM/DD/YYYY HH:mm（不转换时区）</option></select></label>
-          <label>币种列表头（无此列留空，币种未知）<input id="supCurrency"></label><label>Net 金额列表头<input id="supNet" required></label>
+          <label>币种列表头（无此列留空）<input id="supCurrency"></label><label>Net 金额列表头<input id="supNet" required></label>
+          <label>报表币种（无币种列且有独立依据时填写）<input id="supSourceCurrency" maxlength="3"></label><label>报表币种独立依据<input id="supSourceCurrencyBasis" placeholder="可核实的报表币种来源及适用范围"></label>
+          <label class="wide"><input id="supNoCurrencyColumn" type="checkbox"> 我已核实原报表没有币种列（填写报表币种时必选）</label>
           <label>Gross 金额列表头（可选）<input id="supGross"></label><label>Click URL 列表头（可选）<input id="supId"></label>
           <label class="wide">来源映射依据（无 Click URL 列时必填）<input id="supBasis" placeholder="例如：经核实的 Creative ID 对照及生效日期"></label>
           <label class="wide">来源筛选条件 JSON（可选）：同列多值用 values，列之间同时满足。例：[{"column":"Campaign","value":"A"},{"column":"Tag","values":["T1","T2"]}]<input id="supFilters"></label>
