@@ -1,6 +1,6 @@
 // One HTTP app serving both entry points of the project:
 //   /mcp          Streamable HTTP MCP endpoint (Bearer: personal aimcp_ token ONLY; every call is attributed to a person)
-//   /dashboard/   human console (login with @feedmob.com email + shared access token, cookie session)
+//   /dashboard/   human console (Google team login or isolated local login, cookie session)
 //   /api/*        JSON API used by the console
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -14,7 +14,8 @@ import { isFeedmobEmail, type Config } from "../config.js";
 import type { FetchLike } from "../http.js";
 import { createServer as createMcpServer, makeContext, toolsFor, ALL_TOOLS, VERSION } from "../server.js";
 import { invokeTool } from "../tools/registry.js";
-import type { UsageStore } from "../usage.js";
+import type { UsageStore, VerifiedTokenOwner } from "../usage.js";
+import { GoogleLogin, type GoogleTransaction } from "./google-auth.js";
 
 const WEB_DIR = fileURLToPath(new URL("../../../web/", import.meta.url));
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -26,13 +27,16 @@ const PUBLIC_ASSETS: Record<string, [string, string]> = {
   "/assets/login.js": ["login.js", "text/javascript; charset=utf-8"],
 };
 
-export interface WebAppOptions { accessToken: string; fetchImpl?: FetchLike; usage?: UsageStore; now?: () => number }
-interface Session { email: string; expires: number }
+export interface WebAppOptions { accessToken: string; fetchImpl?: FetchLike; usage?: UsageStore; now?: () => number; googleLogin?: GoogleLogin }
+interface Session { email: string; expires: number; identity?: VerifiedTokenOwner }
 
 export function createWebApp(cfg: Config, opts: WebAppOptions): Server {
   const now = opts.now ?? Date.now;
   const startedAt = now();
   const sessions = new Map<string, Session>();
+  const transactions = new Map<string, GoogleTransaction>();
+  const google = opts.googleLogin;
+  const origin = google ? new URL(google.settings.callbackUrl).origin : null;
   const { usage } = opts;
   const available = toolsFor(cfg);
 
@@ -57,7 +61,8 @@ export function createWebApp(cfg: Config, opts: WebAppOptions): Server {
     const token = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "").trim();
     if (!token) return {};
     if (sharedTokenOk(token)) return { hint: "共享访问令牌不能再用于 MCP。请在控制台“我的 MCP 令牌”页生成个人令牌。" };
-    return { caller: usage?.resolveToken(token) };
+    const caller = usage?.resolveToken(token, !!google);
+    return caller ? { caller } : { hint: google ? "令牌无效、已吊销或未绑定已验证身份；请通过 Google 登录后重新签发个人令牌。" : undefined };
   };
   const session = (req: IncomingMessage): Session | undefined => {
     const sid = parseCookies(req.headers.cookie)[COOKIE];
@@ -90,9 +95,37 @@ export function createWebApp(cfg: Config, opts: WebAppOptions): Server {
 
       // ---- public pages / assets ----
       if (path in PUBLIC_ASSETS) return file(res, ...PUBLIC_ASSETS[path]);
-      if (path === "/login") return session(req) ? redirect(res, "/dashboard/") : file(res, "login.html", "text/html; charset=utf-8");
+      if (path === "/login") return session(req) ? redirect(res, "/dashboard/") : file(res, google ? "login-team.html" : "login.html", "text/html; charset=utf-8");
+
+      if (google && req.method === "POST" && path !== "/mcp" && req.headers.origin !== origin) return json(res, 403, { error: "请求来源无效" });
+      if (google && path === "/auth/google/start" && req.method === "POST") {
+        for (const [key, value] of transactions) if (value.expires <= now()) transactions.delete(key);
+        const { transaction, url: authUrl } = google.start(now());
+        const id = randomBytes(32).toString("base64url");
+        transactions.set(id, transaction);
+        res.setHeader("Set-Cookie", `aimcp_login=${id}; HttpOnly; Secure; SameSite=Lax; Path=/auth/google/callback; Max-Age=300`);
+        return redirect(res, authUrl);
+      }
+      if (google && path === "/auth/google/callback" && req.method === "GET") {
+        res.setHeader("Referrer-Policy", "no-referrer");
+        res.setHeader("Cache-Control", "no-store");
+        const id = parseCookies(req.headers.cookie).aimcp_login;
+        const tx = id ? transactions.get(id) : undefined;
+        if (id) transactions.delete(id);
+        res.setHeader("Set-Cookie", "aimcp_login=; HttpOnly; Secure; SameSite=Lax; Path=/auth/google/callback; Max-Age=0");
+        if (!tx || tx.expires <= now() || url.searchParams.getAll("state").length !== 1 || url.searchParams.get("state") !== tx.state || url.searchParams.getAll("code").length !== 1 || !url.searchParams.get("code") || url.searchParams.has("error")) return json(res, 403, { error: "登录验证失败，请重新登录" });
+        try {
+          const identity = await google.finish(url.searchParams.get("code")!, tx);
+          const sid = randomBytes(32).toString("hex");
+          sessions.set(sid, { email: identity.email, identity, expires: now() + SESSION_TTL_MS });
+          res.setHeader("Set-Cookie", ["aimcp_login=; HttpOnly; Secure; SameSite=Lax; Path=/auth/google/callback; Max-Age=0", `${COOKIE}=${sid}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`]);
+          res.setHeader("Referrer-Policy", "no-referrer");
+          return redirect(res, "/dashboard/");
+        } catch { return json(res, 403, { error: "登录验证失败，请重新登录" }); }
+      }
 
       if (path === "/api/login" && req.method === "POST") {
+        if (google) return json(res, 403, { error: "团队模式仅支持 Google 登录" });
         const { email = "", token = "" } = (await readJson(req)) as { email?: string; token?: string };
         const mail = String(email).trim().toLowerCase();
         if (!isFeedmobEmail(mail)) return json(res, 403, { error: "只允许 @feedmob.com 邮箱登录" });
@@ -114,7 +147,7 @@ export function createWebApp(cfg: Config, opts: WebAppOptions): Server {
 
       if (path === "/api/logout" && req.method === "POST") {
         const sid = parseCookies(req.headers.cookie)[COOKIE]; if (sid) sessions.delete(sid);
-        res.setHeader("Set-Cookie", `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+        res.setHeader("Set-Cookie", `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${google ? "; Secure" : ""}`);
         return json(res, 200, { ok: true });
       }
       if (path === "/api/me") return json(res, 200, { email: s.email, expiresAt: new Date(s.expires).toISOString() });
@@ -150,6 +183,8 @@ export function createWebApp(cfg: Config, opts: WebAppOptions): Server {
       // ---- usage (stage 4) ----
       if (path.startsWith("/api/usage") || path.startsWith("/api/tokens")) {
         if (!usage) return json(res, 503, { error: "使用记录未开启" });
+        if (google && !s.identity) return json(res, 403, { error: "需要已验证的身份" });
+        const owner = google ? s.identity! : s.email;
         const days = Math.min(Math.max(Number(url.searchParams.get("days")) || 7, 1), 365);
         const since = new Date(now() - days * 86_400_000).toISOString();
         if (path === "/api/usage/summary") return json(res, 200, { days, ...usage.summary(since) });
@@ -157,15 +192,15 @@ export function createWebApp(cfg: Config, opts: WebAppOptions): Server {
           return json(res, 200, { calls: usage.calls({ since, limit: Number(url.searchParams.get("limit")) || 100,
             caller: url.searchParams.get("caller") || undefined, tool: url.searchParams.get("tool") || undefined }) });
         }
-        if (path === "/api/tokens" && req.method === "GET") return json(res, 200, { tokens: usage.tokens(s.email) });
+        if (path === "/api/tokens" && req.method === "GET") return json(res, 200, { tokens: usage.tokens(owner) });
         if (path === "/api/tokens" && req.method === "POST") {
           const { label = "" } = (await readJson(req)) as { label?: string };
-          const { token, row } = usage.issueToken(s.email, String(label).trim());
+          const { token, row } = usage.issueToken(owner, String(label).trim());
           return json(res, 200, { token, row });
         }
         if (path === "/api/tokens/revoke" && req.method === "POST") {
           const { id } = (await readJson(req)) as { id?: number };
-          return usage.revokeToken(s.email, Number(id)) ? json(res, 200, { ok: true }) : json(res, 404, { error: "令牌不存在或已吊销" });
+          return usage.revokeToken(owner, Number(id)) ? json(res, 200, { ok: true }) : json(res, 404, { error: "令牌不存在或已吊销" });
         }
       }
       return json(res, 404, { error: "Not Found" });

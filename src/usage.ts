@@ -8,6 +8,7 @@ export type Source = "stdio" | "mcp-http" | "dashboard";
 export interface CallRecord { caller: string; source: Source; tool: string; args: unknown; durationMs: number; ok: boolean; error?: string }
 export interface CallRow { id: number; ts: string; caller: string; source: Source; tool: string; args: string; duration_ms: number; ok: number; error: string | null }
 export interface TokenRow { id: number; email: string; label: string; prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null }
+export interface VerifiedTokenOwner { issuer: string; subject: string; email: string }
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 const MAX_ARGS = 2000;
@@ -32,6 +33,14 @@ export class UsageStore {
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
         last_used_at TEXT, revoked_at TEXT
       );`);
+    // Add nullable identity fields without assigning old self-declared tokens to anyone.
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const columns = this.db.prepare("PRAGMA table_info(api_tokens)").all() as unknown as { name: string }[];
+      if (!columns.some(c => c.name === "issuer")) this.db.exec("ALTER TABLE api_tokens ADD COLUMN issuer TEXT");
+      if (!columns.some(c => c.name === "subject")) this.db.exec("ALTER TABLE api_tokens ADD COLUMN subject TEXT");
+      this.db.exec("COMMIT");
+    } catch (e) { this.db.exec("ROLLBACK"); throw e; }
   }
 
   record(r: CallRecord): void {
@@ -64,22 +73,26 @@ export class UsageStore {
   }
 
   /** Issue a personal MCP token; the plaintext is returned once and only its hash is stored. */
-  issueToken(email: string, label: string): { token: string; row: TokenRow } {
+  issueToken(owner: string | VerifiedTokenOwner, label: string): { token: string; row: TokenRow } {
+    const email = typeof owner === "string" ? owner : owner.email;
+    if (typeof owner !== "string" && (!owner.issuer || !owner.subject)) throw new Error("Verified issuer and subject are required");
     const token = "aimcp_" + randomBytes(24).toString("hex");
-    const info = this.db.prepare("INSERT INTO api_tokens (email, label, prefix, token_hash) VALUES (?, ?, ?, ?)")
-      .run(email, label.slice(0, 60) || "未命名", token.slice(0, 12), sha256(token));
+    const info = this.db.prepare("INSERT INTO api_tokens (email, label, prefix, token_hash, issuer, subject) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(email, label.slice(0, 60) || "未命名", token.slice(0, 12), sha256(token), typeof owner === "string" ? null : owner.issuer, typeof owner === "string" ? null : owner.subject);
     return { token, row: this.db.prepare("SELECT id, email, label, prefix, created_at, last_used_at, revoked_at FROM api_tokens WHERE id = ?").get(info.lastInsertRowid) as unknown as TokenRow };
   }
-  tokens(email: string): TokenRow[] {
-    return this.db.prepare("SELECT id, email, label, prefix, created_at, last_used_at, revoked_at FROM api_tokens WHERE email = ? ORDER BY id DESC").all(email) as unknown as TokenRow[];
+  tokens(owner: string | VerifiedTokenOwner): TokenRow[] {
+    const sql = "SELECT id, email, label, prefix, created_at, last_used_at, revoked_at FROM api_tokens WHERE ";
+    return (typeof owner === "string" ? this.db.prepare(sql + "email = ? AND issuer IS NULL AND subject IS NULL ORDER BY id DESC").all(owner) : this.db.prepare(sql + "issuer = ? AND subject = ? ORDER BY id DESC").all(owner.issuer, owner.subject)) as unknown as TokenRow[];
   }
-  revokeToken(email: string, id: number): boolean {
-    return Number(this.db.prepare("UPDATE api_tokens SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND email = ? AND revoked_at IS NULL").run(id, email).changes) > 0;
+  revokeToken(owner: string | VerifiedTokenOwner, id: number): boolean {
+    const sql = "UPDATE api_tokens SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND revoked_at IS NULL AND ";
+    return Number((typeof owner === "string" ? this.db.prepare(sql + "email = ? AND issuer IS NULL AND subject IS NULL").run(id, owner) : this.db.prepare(sql + "issuer = ? AND subject = ?").run(id, owner.issuer, owner.subject)).changes) > 0;
   }
   /** Returns the owner's email for a valid, unrevoked personal token. */
-  resolveToken(token: string): string | undefined {
+  resolveToken(token: string, verifiedOnly = false): string | undefined {
     if (!token.startsWith("aimcp_")) return undefined;
-    const row = this.db.prepare("SELECT id, email FROM api_tokens WHERE token_hash = ? AND revoked_at IS NULL").get(sha256(token)) as { id: number; email: string } | undefined;
+    const row = this.db.prepare(`SELECT id, email FROM api_tokens WHERE token_hash = ? AND revoked_at IS NULL${verifiedOnly ? " AND issuer = 'https://accounts.google.com' AND subject IS NOT NULL AND length(subject) > 0" : ""}`).get(sha256(token)) as { id: number; email: string } | undefined;
     if (!row) return undefined;
     this.db.prepare("UPDATE api_tokens SET last_used_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").run(row.id);
     return row.email;
