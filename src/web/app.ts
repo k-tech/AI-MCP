@@ -16,6 +16,7 @@ import { createServer as createMcpServer, makeContext, toolsFor, ALL_TOOLS, VERS
 import { invokeTool } from "../tools/registry.js";
 import type { UsageStore, VerifiedTokenOwner } from "../usage.js";
 import { GoogleLogin, type GoogleTransaction } from "./google-auth.js";
+import { preflightChime } from "./chime-preflight.js";
 
 const WEB_DIR = fileURLToPath(new URL("../../../web/", import.meta.url));
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -144,6 +145,8 @@ export function createWebApp(cfg: Config, opts: WebAppOptions): Server {
       if (!path.startsWith("/api/")) return json(res, 404, { error: "Not Found" });
       if (!s) return json(res, 401, { error: "请先登录" });
       const ctx = makeContext(cfg, { fetchImpl: opts.fetchImpl, caller: s.email, source: "dashboard", usage });
+
+      if (path === "/api/chime/preflight" && req.method === "POST") return json(res, 200, preflightChime(await readJson(req)));
 
       if (path === "/api/logout" && req.method === "POST") {
         const sid = parseCookies(req.headers.cookie)[COOKIE]; if (sid) sessions.delete(sid);

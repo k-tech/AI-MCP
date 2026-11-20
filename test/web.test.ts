@@ -122,6 +122,17 @@ test("web: source currency evidence passes through console route", async () => {
   assert.equal(r.ok, true, r.summary); assert.equal(r.data.currency, "USD"); assert.equal(r.data.gross, 5); assert.equal(r.data.source_currency_basis, "synthetic report proof"); assert.equal(r.data.suggested_create, null);
 });
 
+test("web: Chime preflight is authenticated and makes no upstream request or usage log", async () => {
+  const args = { target_date: "2026-11-03", files: [{ name: "synthetic.csv", csv_text: "date,app-id,agency,media-source,campaign-id,campaign,geo,currency,spend,adset,ad\n2026-11-03,app,agency,media,id,campaign,US,USD,1.25,set,ad" }] };
+  assert.equal((await post("/api/chime/preflight", args)).status, 401);
+  const cookie = await login(); const seen = api.seen.length, calls = usage.calls().length;
+  const page = await (await fetch(base + "/dashboard/", { headers: { cookie } })).text();
+  assert.match(page, /r-chime/); assert.match(page, /daily_report_logs\?report_config_id=41/);
+  const r = await post("/api/chime/preflight", args, cookie); assert.equal(r.status, 200);
+  const data = await r.json(); assert.equal(data.rows, 1); assert.equal(data.issue_count, 0); assert.deepEqual(data.totals, [{ currency: "USD", spend: "1.25" }]);
+  assert.equal(api.seen.length, seen); assert.equal(usage.calls().length, calls);
+});
+
 test("web: logout ends the session", async () => {
   const cookie = await login();
   await post("/api/logout", {}, cookie);

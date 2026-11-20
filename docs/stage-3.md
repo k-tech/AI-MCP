@@ -1,5 +1,13 @@
 # Stage 3 — Report statistics
 
+## Chime Agency Spend preflight
+
+Report 统计 → Chime Agency Spend 预检 links to the official report log filtered to report config 41. Select Report Time in that system to find a historical sent snapshot. After selecting one day, the page also constructs the official single-day ZIP export link; an export generated now may differ from the historical sent snapshot after data revisions. Both links open the official system and require its access. Tally does not fetch, upload, send or schedule either report.
+
+The historic [report form](https://github.com/feed-mob/feedmob_client_reports/blob/5f3d5f665b836602e39ec77a15ac6f334b10f3a7/app/views/daily_reports/reports/_chime_agency_spend.html.erb), [controller](https://github.com/feed-mob/feedmob_client_reports/blob/5f3d5f665b836602e39ec77a15ac6f334b10f3a7/app/controllers/chime_agency_spend_reports_controller.rb) and [date parser](https://github.com/feed-mob/feedmob_client_reports/blob/5f3d5f665b836602e39ec77a15ac6f334b10f3a7/app/controllers/application_controller.rb) specify GET `export.zip` with `end_date` in `MM/DD/YYYY`; the live form was inspected, but an actual ZIP was not generated in this change. The [report command](https://github.com/feed-mob/feedmob_client_reports/blob/5f3d5f665b836602e39ec77a15ac6f334b10f3a7/app/commands/chime_agency_spend_report_command.rb) specifies the 11-column order.
+
+Choose up to 10 decompressed UTF-8 CSVs, total at most 800,000 bytes. The browser sends their text to the current Tally service for in-memory validation only; it is not saved or written to the usage log. The preflight checks the exact header order, parseability, target date, currency shape, numeric limits, negative values, missing identifiers and duplicate rows; it reports exact decimal sums per currency. Issues are capped in display at 50, with a total count. Sums include parseable amounts even on flagged rows and are not proof of complete, correct or sendable data. Validate origin, data version, mapping, currency and business rules independently. The preflight neither extracts ZIPs nor creates replacement reports.
+
 | Tool | What it adds on top of the API |
 |---|---|
 | get_vendors | counts by status and vendor type |
