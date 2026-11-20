@@ -9,6 +9,33 @@ const cfg = loadConfig({ FEEDMOB_API_BASE: "https://fake.test", FEEDMOB_KEY: "k"
 const base = { click_url_id: 23203, spend_date: "2026-11-05", source_name: "example CSV", columns: { date: "day", click_url_id: "url", currency: "ccy", net: "net", gross: "gross" } };
 const csv = "day,url,ccy,net,gross\n2026-11-05,23203,USD,10,15\n2026-11-05,23203,USD,5,7\n2026-11-06,23203,USD,100,200";
 const run = (csv_text: string) => invokeTool(previewSuppliedSpendReport, { ...base, csv_text }, makeContext(cfg));
+test("independently sourced report currency permits only evidenced read-only preview", async () => {
+  const { fakeApi } = await import("./fake-api.js");
+  const api = fakeApi({ "GET /ai/api/direct_spends": () => [200, { data: [{ click_url_id: 1, date: "2026-11-18", currency: "USD", feedmob_net_spend: 80, feedmob_gross_spend: 100 }] }] });
+  const args = { click_url_id: 1, spend_date: "2026-11-18", source_name: "synthetic", csv_text: "day,tag,net\n2026-11-18,A,80", columns: { date: "day", net: "net" }, mapping: { basis: "mapping proof", effective_from: "2026-11-01", effective_to: "2026-11-30", filters: [{ column: "tag", value: "A" }] }, source_currency: { currency: "usd", basis: "report currency proof", no_currency_column: true }, ledger: { currency: "USD", basis: "ledger proof" }, billing_rule: { type: "margin_on_gross", margin_percent: 20, currency: "USD", effective_from: "2026-11-01", effective_to: "2026-11-30", basis: "rule proof" }, check_existing: true };
+  const invoke = (a: unknown) => invokeTool(previewSuppliedSpendReport, a, makeContext(cfg, { fetchImpl: api.fetchImpl }));
+  const r = await invoke(args); assert.equal(r.ok, true, r.summary); const d = r.data as any;
+  assert.equal(d.currency, "USD"); assert.equal(d.currency_source, "caller_evidence"); assert.equal(d.source_currency_basis, "report currency proof"); assert.equal(d.mapping_basis, "mapping proof"); assert.equal(d.ledger_basis, "ledger proof"); assert.equal(d.billing_rule_basis, "rule proof");
+  assert.equal(d.net, 80); assert.equal(d.gross, 100); assert.match(d.warnings.join(" "), /与预览一致/); assert.match(d.warnings.join(" "), /必须独立核实/); assert.equal(d.suggested_create, null);
+  for (const source_currency of [{ currency: "USD", basis: " ", no_currency_column: true }, { currency: "USD", no_currency_column: true }, { currency: "USD", basis: "proof", no_currency_column: false }, { currency: "US", basis: "proof", no_currency_column: true }]) assert.equal((await invoke({ ...args, source_currency })).ok, false);
+  const unknown = (await invoke({ ...args, source_currency: undefined })).data as any;
+  assert.equal(unknown.currency, null); assert.equal(unknown.gross, null); assert.equal(unknown.calculation, null); assert.match(unknown.warnings.join(" "), /不可比较/);
+  for (const variant of [{ ledger: { ...args.ledger, currency: "EUR" } }, { billing_rule: { ...args.billing_rule, currency: "EUR" } }, { billing_rule: { ...args.billing_rule, effective_to: "2026-11-17" } }, { mapping: { ...args.mapping, effective_to: "2026-11-17" } }]) {
+    const blocked = (await invoke({ ...args, ...variant })).data as any;
+    assert.equal(blocked.gross, null); assert.equal(blocked.calculation, null); assert.doesNotMatch(blocked.warnings.join(" "), /与预览一致/); assert.equal(blocked.suggested_create, null);
+  }
+  const conflict = await invoke({ ...args, columns: { ...args.columns, currency: "ccy" }, csv_text: "day,tag,net,ccy\n2026-11-18,A,80,EUR" });
+  assert.equal(conflict.ok, false); assert.match(conflict.summary, /不能同时使用/);
+  const redundant = await invoke({ ...args, columns: { ...args.columns, currency: "ccy" }, csv_text: "day,tag,net,ccy\n2026-11-18,A,80,USD" });
+  assert.equal(redundant.ok, false);
+  assert.equal((await invoke({ ...args, check_existing: false })).ok, false);
+  const nonexistent = await invoke({ ...args, columns: { ...args.columns, currency: "missing" }, source_currency: undefined });
+  assert.equal(nonexistent.ok, false); assert.match(nonexistent.summary, /映射列不存在/);
+  const otherApi = fakeApi({ "GET /ai/api/direct_spends": () => [200, { data: [{ click_url_id: 1, date: "2026-11-18", currency: "EUR", feedmob_net_spend: 80, feedmob_gross_spend: 100 }] }] });
+  const other = (await invokeTool(previewSuppliedSpendReport, args, makeContext(cfg, { fetchImpl: otherApi.fetchImpl }))).data as any;
+  assert.equal(other.gross, null); assert.equal(other.calculation, null); assert.match(other.warnings.join(" "), /不可比较/);
+  assert.ok(api.seen.every(x => x.method === "GET"));
+});
 test("synthetic Vizio-shaped CSV: explicit date format and unknown currency remain read-only", async () => {
   const { fakeApi } = await import("./fake-api.js");
   const api = fakeApi({ "GET /ai/api/direct_spends": () => [200, { data: [{ click_url_id: 1, date: "2026-11-18", currency: "USD", feedmob_net_spend: 30, feedmob_gross_spend: 40 }] }] });
