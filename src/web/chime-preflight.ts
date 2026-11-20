@@ -17,7 +17,7 @@ const formatted = (v: bigint) => {
 
 /** Only validates supplied text; does not read files, call an API, save, upload or send. */
 export function preflightChime(input: unknown) {
-  const schema = z.object({ target_date: z.string().date(), files: z.array(z.object({ name: z.string().min(1).max(200), csv_text: z.string().min(1).max(800_000) }).strict()).min(1).max(10) }).strict();
+  const schema = z.object({ target_date: z.string().date(), files: z.array(z.object({ name: z.string().min(1).max(200), csv_text: z.string().min(1) }).strict()).min(1).max(10) }).strict();
   const parsed = schema.safeParse(input);
   if (!parsed.success) throw new Error("请选择有效日期和 1 到 10 个非空 CSV 文件");
   const { target_date, files } = parsed.data;

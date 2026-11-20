@@ -21,6 +21,9 @@ import { preflightChime } from "./chime-preflight.js";
 const WEB_DIR = fileURLToPath(new URL("../../../web/", import.meta.url));
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const COOKIE = "aimcp_sid";
+// JSON.stringify can expand a CSV byte to six bytes (e.g. a control character),
+// plus up to ten escaped 200-character filenames and JSON envelope overhead.
+const CHIME_JSON_LIMIT = 4_820_000;
 
 const PUBLIC_ASSETS: Record<string, [string, string]> = {
   "/assets/style.css": ["style.css", "text/css; charset=utf-8"],
@@ -146,7 +149,7 @@ export function createWebApp(cfg: Config, opts: WebAppOptions): Server {
       if (!s) return json(res, 401, { error: "请先登录" });
       const ctx = makeContext(cfg, { fetchImpl: opts.fetchImpl, caller: s.email, source: "dashboard", usage });
 
-      if (path === "/api/chime/preflight" && req.method === "POST") return json(res, 200, preflightChime(await readJson(req)));
+      if (path === "/api/chime/preflight" && req.method === "POST") return json(res, 200, preflightChime(await readJson(req, CHIME_JSON_LIMIT)));
 
       if (path === "/api/logout" && req.method === "POST") {
         const sid = parseCookies(req.headers.cookie)[COOKIE]; if (sid) sessions.delete(sid);
@@ -229,9 +232,9 @@ async function file(res: ServerResponse, name: string, type: string) {
   res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-cache", "X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff" });
   res.end(body);
 }
-async function readJson(req: IncomingMessage): Promise<unknown> {
+async function readJson(req: IncomingMessage, maxBytes = 1_000_000): Promise<unknown> {
   const chunks: Buffer[] = []; let size = 0;
-  for await (const c of req) { size += (c as Buffer).length; if (size > 1_000_000) throw new Error("请求体过大"); chunks.push(c as Buffer); }
+  for await (const c of req) { size += (c as Buffer).length; if (size > maxBytes) throw new Error("请求体过大"); chunks.push(c as Buffer); }
   const raw = Buffer.concat(chunks).toString("utf8");
   if (!raw) return {};
   try { return JSON.parse(raw); } catch { throw new Error("请求体不是合法 JSON"); }

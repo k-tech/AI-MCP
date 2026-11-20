@@ -133,6 +133,30 @@ test("web: Chime preflight is authenticated and makes no upstream request or usa
   assert.equal(api.seen.length, seen); assert.equal(usage.calls().length, calls);
 });
 
+test("web: Chime preflight accepts near-limit quoted CSV and rejects oversized decoded CSV", async () => {
+  const cookie = await login();
+  const header = "date,app-id,agency,media-source,campaign-id,campaign,geo,currency,spend,adset,ad";
+  const quoted = `"${'""'.repeat(64)}"`;
+  const csv_text = `${header}\n${Array.from({ length: 4000 }, (_, i) => `2026-11-03,app,agency,media,id${i},campaign,US,USD,1,set,${quoted}`).join("\n")}`;
+  const args = { target_date: "2026-11-03", files: [{ name: "synthetic.csv", csv_text }] };
+  assert.ok(Buffer.byteLength(csv_text) > 740000 && Buffer.byteLength(csv_text) <= 800000);
+  assert.ok(Buffer.byteLength(JSON.stringify(args)) > 1_000_000);
+  const seen = api.seen.length, calls = usage.calls().length;
+  const r = await post("/api/chime/preflight", args, cookie);
+  assert.equal(r.status, 200, await r.clone().text());
+  const data = await r.json(); assert.equal(data.rows, 4000); assert.equal(data.issue_count, 0); assert.deepEqual(data.totals, [{ currency: "USD", spend: "4000" }]);
+  const exact = csv_text.slice(0, -1) + "a".repeat(800000 - Buffer.byteLength(csv_text)) + '"';
+  assert.equal(Buffer.byteLength(exact), 800000);
+  const atLimit = await post("/api/chime/preflight", { ...args, files: [{ name: "exact.csv", csv_text: exact }] }, cookie);
+  assert.equal(atLimit.status, 200, await atLimit.clone().text()); assert.equal((await atLimit.json()).rows, 4000);
+  const oversized = { target_date: "2026-11-03", files: [{ name: "one.csv", csv_text: "a".repeat(400001) }, { name: "two.csv", csv_text: "a".repeat(400000) }] };
+  const rejected = await post("/api/chime/preflight", oversized, cookie);
+  assert.equal(rejected.status, 400); assert.match((await rejected.json()).error, /800,000/);
+  const otherRoute = await post("/api/tools/call", { name: "get_clients", arguments: { padding: "x".repeat(1_000_001) } }, cookie);
+  assert.equal(otherRoute.status, 400); assert.match((await otherRoute.json()).error, /请求体过大/);
+  assert.equal(api.seen.length, seen); assert.equal(usage.calls().length, calls);
+});
+
 test("web: logout ends the session", async () => {
   const cookie = await login();
   await post("/api/logout", {}, cookie);
