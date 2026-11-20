@@ -9,6 +9,19 @@ const cfg = loadConfig({ FEEDMOB_API_BASE: "https://fake.test", FEEDMOB_KEY: "k"
 const base = { click_url_id: 23203, spend_date: "2026-11-05", source_name: "example CSV", columns: { date: "day", click_url_id: "url", currency: "ccy", net: "net", gross: "gross" } };
 const csv = "day,url,ccy,net,gross\n2026-11-05,23203,USD,10,15\n2026-11-05,23203,USD,5,7\n2026-11-06,23203,USD,100,200";
 const run = (csv_text: string) => invokeTool(previewSuppliedSpendReport, { ...base, csv_text }, makeContext(cfg));
+test("synthetic multi-tag mapping selects alternatives within campaign and preserves single values", async () => {
+  const { fakeApi } = await import("./fake-api.js");
+  const api = fakeApi({ "GET /ai/api/direct_spends": () => [200, { data: [] }] });
+  const args = { click_url_id: 23505, spend_date: "2026-11-05", source_name: "synthetic", csv_text: "day,campaign,tag,ccy,net\n2026-11-05,A,T1,USD,10\n2026-11-05,A,T2,USD,20\n2026-11-05,A,OTHER,USD,100\n2026-11-05,B,T1,USD,200\n2026-11-06,A,T1,USD,300", columns: { date: "day", currency: "ccy", net: "net" }, mapping: { basis: "synthetic", filters: [{ column: "campaign", value: "A" }, { column: "tag", values: ["T1", "T2"] }] }, check_existing: true };
+  const invoke = (a: unknown) => invokeTool(previewSuppliedSpendReport, a, makeContext(cfg, { fetchImpl: api.fetchImpl }));
+  const multi = await invoke(args); assert.equal(multi.ok, true, multi.summary); assert.equal((multi.data as any).matched_rows, 2); assert.equal((multi.data as any).net, 30); assert.equal((multi.data as any).suggested_create, null);
+  const single = await invoke({ ...args, mapping: { ...args.mapping, filters: [{ column: "campaign", value: "A" }, { column: "tag", value: "T1" }] } });
+  assert.equal(single.ok, true); assert.equal((single.data as any).net, 10);
+  for (const filter of [{ column: "tag", values: [] }, { column: "tag", values: [""] }, { column: "tag", value: "T1", values: ["T2"] }, { column: "tag" }]) {
+    assert.equal((await invoke({ ...args, mapping: { ...args.mapping, filters: [filter] } })).ok, false);
+  }
+  assert.ok(api.seen.every(x => x.method === "GET"));
+});
 test("supplied CSV: sums only explicit date and URL, blocks create without ledger currency", async () => {
   const r = await run(csv); const d = r.data as any;
   assert.equal(r.ok, true); assert.equal(d.matched_rows, 2); assert.equal(d.currency, "USD");
