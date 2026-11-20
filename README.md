@@ -30,6 +30,8 @@ The HTTP server requires an explicit `TALLY_AUTH_MODE`: `local` permits a self-d
 
 Connecting an agent (Claude Code, Claude Desktop, Codex, OpenCode, Cursor, curl): generate a personal token in the console under "我的 MCP 令牌"; the page shows the exact config for each client.
 
+Google mode accepts only tokens issued by a verified Google session, bound to issuer and subject. Legacy self-declared tokens remain usable in local mode but must be reissued after Google login for team use; see `docs/stage-4.md` for the database migration and audit limitations.
+
 ## Layout
 
 ```

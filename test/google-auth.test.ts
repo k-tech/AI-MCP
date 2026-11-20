@@ -34,7 +34,7 @@ test("team mode verifies signed provider identity, binds browser state and prese
   let clock = Date.now();
   const old = store.issueToken("existing@feedmob.com", "existing").token;
   const api = fakeApi({ "GET /ai/api/clients": () => [200, []] });
-  const server = createWebApp(cfg, { accessToken: "shared-local-token", googleLogin: new GoogleLogin(settings, client), usage: store, fetchImpl: api.fetchImpl, now: () => clock });
+  const server = createWebApp({ ...cfg, enableWrite: true }, { accessToken: "shared-local-token", googleLogin: new GoogleLogin(settings, client), usage: store, fetchImpl: api.fetchImpl, now: () => clock });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const post = (path: string, data: unknown, origin = "https://tally.example", cookie = "") => fetch(base + path, { method: "POST", headers: { origin, cookie, "content-type": "application/json" }, body: JSON.stringify(data), redirect: "manual" });
@@ -69,9 +69,27 @@ test("team mode verifies signed provider identity, binds browser state and prese
     assert.equal((await post("/api/tools/call", { name: "get_clients" }, "https://tally.example", sid)).status, 200);
     assert.equal(store.calls({ limit: 1 })[0].caller, "person@feedmob.com");
     const issued = await (await post("/api/tokens", { label: "verified user" }, "https://tally.example", sid)).json() as any;
-    assert.equal(store.resolveToken(issued.token), "person@feedmob.com");
-    const mcp = await fetch(base + "/mcp", { method: "POST", headers: { authorization: `Bearer ${old}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "whoami", arguments: {} } }) });
-    assert.equal(mcp.status, 200);
+    assert.equal(store.resolveToken(issued.token, true), "person@feedmob.com");
+    assert.deepEqual(store.tokens("person@feedmob.com"), []); assert.equal(store.revokeToken("person@feedmob.com", issued.row.id), false);
+    const seenBefore = api.seen.length;
+    const callsBefore = store.calls().length;
+    const mcp = await fetch(base + "/mcp", { method: "POST", headers: { authorization: `Bearer ${old}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "create_direct_spend", arguments: {} } }) });
+    assert.equal(mcp.status, 401); assert.match((await mcp.json() as any).hint, /重新签发/); assert.equal(api.seen.length, seenBefore); assert.equal(store.calls().length, callsBefore);
+    const allowed = await fetch(base + "/mcp", { method: "POST", headers: { authorization: `Bearer ${issued.token}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "whoami", arguments: {} } }) });
+    assert.equal(allowed.status, 200); assert.equal(store.calls({ limit: 1 })[0].caller, "person@feedmob.com");
+    // Same email with a different verified subject cannot list or revoke this token.
+    tx = await start(); token = jwt({ ...claims(tx.nonce), sub: "another-sub" });
+    const otherLogin = await callback(tx.state, tx.cookie); const otherSid = otherLogin.headers.get("set-cookie")!.match(/aimcp_sid=[^;,]+/)![0];
+    const listOther = await (await fetch(base + "/api/tokens", { headers: { cookie: otherSid } })).json() as any;
+    assert.deepEqual(listOther.tokens, []);
+    assert.equal((await post("/api/tokens/revoke", { id: issued.row.id }, "https://tally.example", otherSid)).status, 404);
+    // The same verified subject retains ownership if its provider email changes.
+    tx = await start(); token = jwt({ ...claims(tx.nonce), email: "renamed@feedmob.com" });
+    const renamed = await callback(tx.state, tx.cookie); const renamedSid = renamed.headers.get("set-cookie")!.match(/aimcp_sid=[^;,]+/)![0];
+    const listRenamed = await (await fetch(base + "/api/tokens", { headers: { cookie: renamedSid } })).json() as any;
+    assert.equal(listRenamed.tokens.length, 1); assert.equal(listRenamed.tokens[0].id, issued.row.id); assert.equal(listRenamed.tokens[0].email, "person@feedmob.com");
+    assert.equal((await post("/api/tokens/revoke", { id: issued.row.id }, "https://tally.example", renamedSid)).status, 200);
+    assert.equal(store.resolveToken(issued.token, true), undefined);
     assert.equal((await callback(tx.state, tx.cookie)).status, 403);
   } finally { server.close(); store.close(); }
 });
