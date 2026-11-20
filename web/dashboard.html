@@ -178,9 +178,25 @@
       <div class="tabs" role="tablist">
         <button type="button" role="tab" aria-selected="true" data-tab="r-overview">报表总览</button>
         <button type="button" role="tab" aria-selected="false" data-tab="r-internal">客户报表（上传给客户）</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="r-chime">Chime Agency Spend 预检</button>
         <button type="button" role="tab" aria-selected="false" data-tab="r-partner">渠道报表对账</button>
         <button type="button" role="tab" aria-selected="false" data-tab="r-vendors">渠道</button>
         <button type="button" role="tab" aria-selected="false" data-tab="r-campaigns">Campaign</button>
+      </div>
+      <div id="r-chime" class="plan" hidden>
+        <div class="panel">
+          <h2>Chime Agency Spend 来源与预检</h2>
+          <p class="notice info">历史发送归档是当时的快照；单日重新导出使用当前数据，后续修订可能导致金额不同。两个入口都需要相应的官方系统权限。</p>
+          <p><a href="https://client-reports.feedmob.com/daily_report_logs?report_config_id=41" target="_blank" rel="noopener noreferrer">打开官方报表日志，按 Report Time 选择日期</a>；请核对状态、目的地并选择历史备份，日志中的记录不一定已经发送。</p>
+          <form id="chimeForm" class="form-grid">
+            <label>目标日期<input id="chimeDate" type="date" required></label>
+            <label>选择解压后的 CSV（最多 10 个，总计不超过 800 KB）<input id="chimeFiles" type="file" accept=".csv,text/csv" multiple required></label>
+            <button type="submit" class="primary">在 Tally 预检 CSV</button>
+          </form>
+          <p><a id="chimeExport" target="_blank" rel="noopener noreferrer" hidden>打开官方单日 ZIP 重新导出</a></p>
+          <p class="muted">选择目标日期后可打开官方单日导出。预检会将选中文件发给当前 Tally 服务作内存校验，不保存或发送给客户；不验证完整性、业务口径或可发送性。</p>
+          <p id="chimeStatus" role="status"></p><pre id="chimeOutput" class="code"></pre>
+        </div>
       </div>
       <div id="r-overview" class="plan">
         <p class="notice info">每份客户报表（后台“Choose Client Report”上传给客户的报表）在所选日期内哪几天有数据、哪几天缺失、最近什么时候上传。点“对账”可以和 FeedMob 的 direct spend 逐天比较。</p>

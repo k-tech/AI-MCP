@@ -414,6 +414,31 @@
     $("rpName").value = name; $("rpStart").value = start; $("rpEnd").value = end;
     $("rpForm").requestSubmit(); runCompare();
   }
+  let chimeGeneration = 0;
+  const clearChime = () => { chimeGeneration++; $("chimeStatus").textContent = ""; $("chimeOutput").textContent = ""; };
+  $("chimeFiles").addEventListener("change", clearChime);
+  $("chimeDate").addEventListener("change", () => {
+    clearChime();
+    const date = $("chimeDate").value, link = $("chimeExport");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !$("chimeDate").validity.valid) { link.hidden = true; link.removeAttribute("href"); return; }
+    const [year, month, day] = date.split("-");
+    const url = new URL("https://client-reports.feedmob.com/chime_agency_spend_reports/export.zip");
+    url.searchParams.set("end_date", `${month}/${day}/${year}`);
+    link.href = url.href; link.hidden = false;
+  });
+  $("chimeForm").addEventListener("submit", async (e) => {
+    e.preventDefault(); const generation = ++chimeGeneration; $("chimeStatus").textContent = "检查中…"; $("chimeOutput").textContent = "";
+    try {
+      const selected = [...$("chimeFiles").files], target_date = $("chimeDate").value;
+      if (!selected.length || selected.length > 10 || selected.some(f => !/\.csv$/i.test(f.name)) || selected.reduce((n, f) => n + f.size, 0) > 800000) throw new Error("请选择 1 到 10 个 CSV，总计不超过 800 KB");
+      const files = await Promise.all(selected.map(async f => ({ name: f.name, csv_text: await f.text() })));
+      if (generation !== chimeGeneration) return;
+      const response = await fetch("/api/chime/preflight", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_date, files }) });
+      const data = await response.json(); if (generation !== chimeGeneration) return; if (!response.ok) throw new Error(data.error || "预检失败");
+      $("chimeStatus").textContent = `已检查 ${data.rows} 行，发现 ${data.issue_count} 项待核实；这不是发送或业务验收。`;
+      $("chimeOutput").textContent = JSON.stringify(data, null, 2);
+    } catch (err) { if (generation === chimeGeneration) $("chimeStatus").textContent = err.message; }
+  });
   let cmpData = null;
   const CMP = { match: ["ok", "一致"], diff: ["warn", "金额不同"], missing_in_report: ["err", "报表缺失"], missing_in_direct: ["idle", "direct 缺失"], outside_report_scope: ["warn", "报表范围待确认"] };
   function renderCompareRows() {
